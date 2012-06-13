@@ -12,7 +12,7 @@ data.
 
 import sys
 import numpy as np
-from numba.ad import fmin
+from autodiff import fmin_l_bfgs_b
 
 def binary_svm_hinge_loss(weights, bias, x, y, l2_regularization):
     # print x, y
@@ -32,7 +32,7 @@ def main():
     def loss_fn(w, b):
         return binary_svm_hinge_loss(w, b, x, y, 1e-4)
 
-    w, b = fmin(loss_fn, [np.zeros(7), np.zeros(())])
+    w, b = fmin_l_bfgs_b(loss_fn, [np.zeros(7), np.zeros(())])
 
     print 'Best-fit SVM:'
     print ' -> cost:', loss_fn(w, b)

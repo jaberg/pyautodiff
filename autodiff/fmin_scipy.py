@@ -3,6 +3,7 @@ Scipy-based function minimization drivers
 
 """
 
+import numpy as np
 import scipy.optimize.lbfgsb
 import theano
 
