@@ -6,22 +6,10 @@ This script fits a linear support vector machine classifier to random data.  It
 illustrates how a function defined purely by numpy operations can be minimized
 directly with a gradient-based solver.
 
-Program output:
-
-```
-ran loss_fn(), returning 1.0
-ran loss_fn(), returning 0.722904977725
-Best-fit SVM:
- -> cost: 0.722904977725
- -> weights: [-0.61920868 -0.68296249  0.90574115  1.15135323 -0.69036838]
- -> bias: -0.0152805125301
-```
-
 """
 
 import numpy as np
 from autodiff import fmin_l_bfgs_b
-from functools import partial
 
 np.random.seed(1)
 
@@ -53,4 +41,13 @@ print 'Best-fit SVM:'
 print ' -> cost:', final_loss
 print ' -> weights:', w
 print ' -> bias:', b
+
+# Program output:
+#
+# ran loss_fn(), returning 1.0
+# ran loss_fn(), returning 0.722904977725
+# Best-fit SVM:
+# -> cost: 0.722904977725
+# -> weights: [-0.61920868 -0.68296249  0.90574115  1.15135323 -0.69036838]
+# -> bias: -0.0152805125301
 
