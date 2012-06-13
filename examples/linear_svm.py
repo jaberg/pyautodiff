@@ -29,11 +29,6 @@ def loss_fn(weights, bias):
 # -- Run loss_fn once to trace computations.
 w, b = fmin_l_bfgs_b(loss_fn, [np.zeros(5), np.zeros(())])
 
-# What happened here?
-# The computation is repeated many times during the optimization process by
-# bytecode *derived* from loss_fn, in which some things (e.g. the print
-# statement) have been removed.
-
 # -- run loss_fn as usual
 final_loss = loss_fn(w, b)
 
@@ -50,4 +45,9 @@ print ' -> bias:', b
 # -> cost: 0.722904977725
 # -> weights: [-0.61920868 -0.68296249  0.90574115  1.15135323 -0.69036838]
 # -> bias: -0.0152805125301
+#
+# What happened here?
+# The computation is repeated many times during the optimization process by
+# bytecode *derived* from loss_fn, in which some things (e.g. the print
+# statement) have been removed.
 
