@@ -5,7 +5,7 @@ Automatic differentiation for NumPy (very new, experimental, unreliable, etc... 
 
 
 Dependencies:
-  * Theano [official master](https://github.com/Theano/Theano.git) (*currently no official release will work*)
+  * Theano [git master](https://github.com/Theano/Theano.git) (*currently no official release will work*)
 
 
 Thanks:
