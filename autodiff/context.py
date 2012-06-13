@@ -14,6 +14,8 @@ import inspect
 import trace
 import opcode
 
+from functools import partial
+
 import numpy as np
 import theano
 
@@ -46,6 +48,14 @@ class FrameVM(object):
         # self.varnames = self.fco.co_varnames
         # self.costr = func.func_code.co_code
         # self.argnames = self.fco.co_varnames[:self.fco.co_argcount]
+
+    def add_shadow(self, x, borrow=False):
+        if x.dtype == bool:
+            print >> sys.stderr, "Warning: Theano has no bool, upgrading to uint8"
+            s_x = theano.shared(x.astype('uint8'), borrow=borrow)
+        else:
+            s_x = theano.shared(x, borrow=borrow)
+        self.watcher.shadow(x, s_x)
 
     def call(self, args, kwargs):
 
@@ -401,7 +411,7 @@ class FrameVM(object):
         self.stack.append(tos)
         if (isinstance(tos, np.ndarray)
                 and id(tos) not in self.watcher.svars):
-            raise NotImplementedError()
+            self.add_shadow(self.stack[-1])
 
     def op_LOAD_ATTR(self, i, op, arg):
         # print 'LOAD_ATTR', self.names[arg]
@@ -410,7 +420,7 @@ class FrameVM(object):
         tos = self.stack[-1]
         if (isinstance(tos, np.ndarray)
                 and id(tos) not in self.watcher.svars):
-            raise NotImplementedError()
+            self.add_shadow(self.stack[-1])
 
     def op_LOAD_CONST(self, i, op, arg):
         self.stack.append(self.func.func_code.co_consts[arg])
@@ -425,6 +435,7 @@ class FrameVM(object):
         thing = self.func.func_closure[arg]
         # print dir(thing.cell_contents)
         self.stack.append(thing.cell_contents)
+        self.add_shadow(self.stack[-1])
 
     def op_LOAD_FAST(self, i, op, arg):
         #print 'LOAD_FAST', self.func.func_code.co_varnames[arg], self._locals[arg]
@@ -432,12 +443,7 @@ class FrameVM(object):
         self.stack.append(tos)
         if (isinstance(tos, np.ndarray)
                 and id(tos) not in self.watcher.svars):
-            if tos.dtype == bool:
-                print >> sys.stderr, "Warning: Theano has no bool, upgrading to uint8"
-                s_tos = theano.shared(tos.astype('uint8'), borrow=False)
-            else:
-                s_tos = theano.shared(tos, borrow=False)
-            self.watcher.shadow(tos, s_tos)
+            self.add_shadow(tos)
 
     def op_POP_BLOCK(self, i, op, arg):
         #print 'pop block, what to do?'
