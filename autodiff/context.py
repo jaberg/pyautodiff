@@ -340,40 +340,40 @@ class FrameVM(object):
             if any(id(a) in self.watcher.svars for a in all_args):
                 s_rval = func.__theano_op__(*s_args, **s_kwargs)
                 self.watcher.shadow(rval, s_rval)
-        elif (getattr(func, '__module__', None)
-                and func.__module__.startswith('numpy')):
-            # func is a numpy module method
+        elif (
+                (getattr(func, '__module__', None)
+                    and func.__module__.startswith('numpy'))
+                or isinstance(func, np.ufunc)
+                or str(func) == '<built-in function abs>'
+                ):
 
             rval = func(*args, **kwargs)
             all_args = args + kwargs.values()
             if any(id(a) in self.watcher.svars for a in all_args):
                 if kwargs:
-                    raise NotImplementedError('kwargs and svars in %s' %
-                            str(func))
-                sargs = [self.watcher.svars.get(id(a), a)
-                        for a in args]
-                if func.__name__ == 'sum':
-                    self.watcher.shadow(rval, theano.tensor.sum(*sargs))
-                elif func.__name__ == 'dot':
-                    self.watcher.shadow(rval, theano.tensor.dot(*sargs))
-                elif func.__name__ == 'mean':
-                    self.watcher.shadow(rval, theano.tensor.mean(*sargs))
-                elif func.__name__ == 'maximum':
-                    self.watcher.shadow(rval, theano.tensor.maximum(*sargs))
-                elif func.__name__ == 'zeros_like':
-                    self.watcher.shadow(rval, theano.tensor.zeros_like(*sargs))
+                    # TODO put kwargs into the watcher calls
+                    raise NotImplementedError()
+                if 0: pass
                 elif func.__name__ == 'abs':
-                    self.watcher.shadow(rval, abs(*sargs))
+                    self.watcher.shadow(rval, abs(*s_args))
+                elif func.__name__ == 'dot':
+                    self.watcher.shadow(rval, theano.tensor.dot(*s_args))
                 elif func.__name__ == 'log10':
-                    self.watcher.shadow(rval, theano.tensor.log10(*sargs))
+                    self.watcher.shadow(rval, theano.tensor.log10(*s_args))
+                elif func.__name__ == 'maximum':
+                    self.watcher.shadow(rval, theano.tensor.maximum(*s_args))
+                elif func.__name__ == 'mean':
+                    self.watcher.shadow(rval, theano.tensor.mean(*s_args))
+                elif func.__name__ == 'sum':
+                    self.watcher.shadow(rval, theano.tensor.sum(*s_args))
+                elif func.__name__ == 'zeros_like':
+                    self.watcher.shadow(rval, theano.tensor.zeros_like(*s_args))
                 else:
                     raise NotImplementedError(func)
             else:
                 # no argument was shadowed (e.g. zeros())
                 if isinstance(rval, np.ndarray):
                     self.add_shadow(rval)
-        elif isinstance(func, np.ufunc):
-            raise NotImplementedError(func)
         elif isinstance(getattr(func, '__self__', None), np.ndarray):
             assert id(func.__self__) in self.watcher.svars
             s_self = self.watcher.svars[id(func.__self__)]
@@ -471,9 +471,10 @@ class FrameVM(object):
 
         if isinstance(tos, np.ndarray):
             if id(tos) not in self.watcher.svars:
-                #print tos
                 raise NotImplementedError('how did this var get here?',
                         (id(tos), tos))
+
+        if id(tos) in self.watcher.svars:
             s_tos = self.watcher.svars[id(tos)]
 
             # hard-code of how to deal with every ndarray property :/
@@ -495,9 +496,6 @@ class FrameVM(object):
                 raise NotImplementedError('ndarray attribute %s' % attr)
             self.stack.append(rval)
         else:
-            if id(tos) in self.watcher.svars:
-                raise NotImplementedError('what is going on here?')
-
             print >> sys.stderr, "INFO: attribute access %s" % attr
             rval = getattr(tos, attr)
             self.stack.append(rval)
@@ -518,7 +516,10 @@ class FrameVM(object):
         thing = self.func.func_closure[arg]
         # print dir(thing.cell_contents)
         self.stack.append(thing.cell_contents)
-        self.add_shadow(self.stack[-1])
+        tos = self.stack[-1]
+        if (isinstance(tos, np.ndarray)
+                and id(tos) not in self.watcher.svars):
+            self.add_shadow(tos)
 
     def op_LOAD_FAST(self, i, op, arg):
         #print 'LOAD_FAST', self.func.func_code.co_varnames[arg], self._locals[arg]
@@ -549,9 +550,9 @@ class FrameVM(object):
 
     def op_PRINT_ITEM(self, i, op, arg):
         thing = self.stack.pop(-1)
-        if thing == 'PRINT_OPS:True':
+        if str(thing) == 'PRINT_OPS:True':
             self.print_ops = True
-        if thing == 'PRINT_STACK:True':
+        if str(thing) == 'PRINT_STACK:True':
             self.print_stack = True
         print thing,
 

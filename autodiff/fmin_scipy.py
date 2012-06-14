@@ -42,17 +42,18 @@ def fmin_l_bfgs_b(fn, args, **scipy_kwargs):
     args_shapes = [w.shape for w in args]
     args_sizes = [w.size for w in args]
     x_size = sum(args_sizes)
-    x = np.empty(x_size)
+    x = np.empty(x_size, dtype='float64') # has to be float64 for fmin_l_bfgs_b
     s_x = theano.tensor.vector(dtype=x.dtype)
     s_args = []
     i = 0
     for w in args:
         x[i: i + w.size] = w.flatten()
         if w.shape:
-            s_args.append(s_x[i: i + w.size].reshape(w.shape))
+            s_xi = s_x[i: i + w.size].reshape(w.shape)
         else:
-            s_args.append(s_x[i])
+            s_xi = s_x[i]
         i += w.size
+        s_args.append(s_xi.astype(str(w.dtype)))
 
     orig_s_cost = ctxt.svars[id(cost)]
     memo = theano.gof.graph.clone_get_equiv(
