@@ -10,6 +10,7 @@ def test_subtensor_increment():
         x2[1] -= 4.0
         rval = (x2 ** 2).sum()
         rval += 1.3
+        rval *= 1.0
         return rval
 
     opt = fmin(loss, [np.zeros(2)])

@@ -212,10 +212,10 @@ class FrameVM(object):
         assert not hasattr(arg2, 'type')
         r = arg1 + arg2
         self.stack.append(r)
-        if (id(arg1) in self.watcher.svars 
+        if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
-            s1 = self.watcher.svars.get(id(arg1), arg1)
-            s2 = self.watcher.svars.get(id(arg2), arg2)
+            s1 = self.ensure_shadow(arg1)
+            s2 = self.ensure_shadow(arg2)
             self.watcher.shadow(r, s1 + s2)
             #print 'added sym'
 
@@ -228,8 +228,8 @@ class FrameVM(object):
         self.stack.append(r)
         if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
-            s1 = self.watcher.svars.get(id(arg1), arg1)
-            s2 = self.watcher.svars.get(id(arg2), arg2)
+            s1 = self.ensure_shadow(arg1)
+            s2 = self.ensure_shadow(arg2)
             self.watcher.shadow(r, s1 / s2)
 
     def op_BINARY_FLOOR_DIVIDE(self, i, op, arg):
@@ -241,8 +241,8 @@ class FrameVM(object):
         self.stack.append(r)
         if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
-            s1 = self.watcher.svars.get(id(arg1), arg1)
-            s2 = self.watcher.svars.get(id(arg2), arg2)
+            s1 = self.ensure_shadow(arg1)
+            s2 = self.ensure_shadow(arg2)
             self.watcher.shadow(r, s1 // s2)
 
     def op_BINARY_SUBTRACT(self, i, op, arg):
@@ -254,8 +254,8 @@ class FrameVM(object):
         self.stack.append(r)
         if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
-            s1 = self.watcher.svars.get(id(arg1), arg1)
-            s2 = self.watcher.svars.get(id(arg2), arg2)
+            s1 = self.ensure_shadow(arg1)
+            s2 = self.ensure_shadow(arg2)
             self.watcher.shadow(r,  s1 - s2)
 
     def op_BINARY_MULTIPLY(self, i, op, arg):
@@ -265,10 +265,10 @@ class FrameVM(object):
         self.stack.append(r)
         assert not hasattr(arg1, 'type')
         assert not hasattr(arg2, 'type')
-        if (id(arg1) in self.watcher.svars 
+        if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
-            s1 = self.watcher.svars.get(id(arg1), arg1)
-            s2 = self.watcher.svars.get(id(arg2), arg2)
+            s1 = self.ensure_shadow(arg1)
+            s2 = self.ensure_shadow(arg2)
             self.watcher.shadow(r, s1 * s2)
             #print 'mul sym', id(r)
 
@@ -277,10 +277,10 @@ class FrameVM(object):
         arg1 = self.stack.pop(-1)
         r = arg1 ** arg2
         self.stack.append(r)
-        if (id(arg1) in self.watcher.svars 
+        if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
-            s1 = self.watcher.svars.get(id(arg1), arg1)
-            s2 = self.watcher.svars.get(id(arg2), arg2)
+            s1 = self.ensure_shadow(arg1)
+            s2 = self.ensure_shadow(arg2)
             self.watcher.shadow(r, s1 ** s2)
             #print 'mul sym', id(r)
 
@@ -293,8 +293,8 @@ class FrameVM(object):
         self.stack[-2:] = [rval]
         w = self.watcher
         if id(tos) in w.svars or id(tos1) in w.svars:
-            s_tos = w.svars.get(id(tos), tos)
-            s_tos1 = w.svars.get(id(tos1), tos1)
+            s_tos = self.ensure_shadow(tos)
+            s_tos1 = self.ensure_shadow(tos1)
             s_rval = s_tos1[s_tos]
             w.shadow(rval, s_rval)
 
@@ -469,6 +469,19 @@ class FrameVM(object):
             s_tos = self.ensure_shadow(tos)
             s_tos1 = self.ensure_shadow(tos1)
             self.watcher.shadow(r, s_tos + s_tos1)
+
+    def op_INPLACE_MULTIPLY(self, i, op, arg):
+        tos = self.stack.pop(-1)
+        tos1 = self.stack.pop(-1)
+
+        r = tos1
+        r *= tos
+        self.stack.append(r)
+        if (id(tos) in self.watcher.svars
+                or id(tos1) in self.watcher.svars):
+            s_tos = self.ensure_shadow(tos)
+            s_tos1 = self.ensure_shadow(tos1)
+            self.watcher.shadow(r, s_tos * s_tos1)
 
     def op_INPLACE_SUBTRACT(self, i, op, arg):
         tos = self.stack.pop(-1)
