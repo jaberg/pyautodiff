@@ -49,7 +49,12 @@ class FrameVM(object):
         # self.costr = func.func_code.co_code
         # self.argnames = self.fco.co_varnames[:self.fco.co_argcount]
 
-    def add_shadow(self, x, borrow=False):
+    def add_shadow(self, x):
+        # -- We cannot safely set up shadow variables that are aliased to
+        #    memory that is visible to the running program, unless that
+        #    program can guarantee that all views of that memory are
+        #    immutable.
+        borrow = False
         if x.dtype == bool:
             print >> sys.stderr, "Warning: Theano has no bool, upgrading to uint8"
             s_x = theano.shared(x.astype('uint8'), borrow=borrow)
@@ -72,6 +77,9 @@ class FrameVM(object):
             _locals[0] = func.im_self
             bind_varnames = co_varnames[1:]
             bind_offset = 1
+            if id(func.im_self) in self.watchers.svars:
+                raise NotImplementedError('bound method on shadowed var: %s' %
+                        func.__name__)
         else:
             bind_varnames = co_varnames
             bind_offset = 0
@@ -161,10 +169,12 @@ class FrameVM(object):
                 if _locals[co_argcount - len(defaults) + ii] is Unassigned:
                    _locals[co_argcount - len(defaults) + ii] = val
 
-        if 0:
-            print 'BINDING'
-            for name, lval in zip(co_varnames, _locals):
-                print '  ', name, lval
+        # print 'BINDING'
+        for name, lval in zip(co_varnames, _locals):
+            if (isinstance(lval, np.ndarray)
+                    and not id(lval) in self.watcher.svars):
+                self.add_shadow(lval)
+            #print '  locals:', name, lval, id(lval)
 
         self.code_iter = itercode(func_code.co_code)
         jmp = None
@@ -209,11 +219,24 @@ class FrameVM(object):
         assert not hasattr(arg2, 'type')
         r = arg1 / arg2
         self.stack.append(r)
-        if (id(arg1) in self.watcher.svars 
+        if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
             s1 = self.watcher.svars.get(id(arg1), arg1)
             s2 = self.watcher.svars.get(id(arg2), arg2)
             self.watcher.shadow(r, s1 / s2)
+
+    def op_BINARY_FLOOR_DIVIDE(self, i, op, arg):
+        arg2 = self.stack.pop(-1)
+        arg1 = self.stack.pop(-1)
+        assert not hasattr(arg1, 'type')
+        assert not hasattr(arg2, 'type')
+        r = arg1 // arg2
+        self.stack.append(r)
+        if (id(arg1) in self.watcher.svars
+                or id(arg2) in self.watcher.svars):
+            s1 = self.watcher.svars.get(id(arg1), arg1)
+            s2 = self.watcher.svars.get(id(arg2), arg2)
+            self.watcher.shadow(r, s1 // s2)
 
     def op_BINARY_SUBTRACT(self, i, op, arg):
         arg2 = self.stack.pop(-1)
@@ -222,7 +245,7 @@ class FrameVM(object):
         assert not hasattr(arg2, 'type')
         r = arg1 - arg2
         self.stack.append(r)
-        if (id(arg1) in self.watcher.svars 
+        if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
             s1 = self.watcher.svars.get(id(arg1), arg1)
             s2 = self.watcher.svars.get(id(arg2), arg2)
@@ -295,35 +318,32 @@ class FrameVM(object):
         kwargs = dict([(self.stack[-2 * ii], self.stack[-2 * ii + 1])
                 for ii in range(n_kwargs, 0, -1)])
         args = [self.stack[-ii - 2 * n_kwargs] for ii in range(n_args, 0, -1)]
+        # -- pop all args off the stack
         if arg:
             self.stack = self.stack[:- n_args - 2 * n_kwargs]
+        # -- pop the function itself off the stack
         func = self.stack.pop(-1)
-        recurse = True
 
-        if (getattr(func, '__module__', None)
-                and func.__module__.startswith('numpy')):
-            recurse = False
-        elif isinstance(func, np.ufunc):
-            recurse = False
-
-        if 'built-in' in str(func):
-            recurse = False
+        #print dir(func)
+        #print func.__self__
+        all_args = args + kwargs.values()
+        s_args = [self.watcher.svars.get(id(a), a) for a in args]
+        s_kwargs = dict([(kw, self.watcher.svars.get(id(val), val))
+            for kw, val in kwargs.items()])
 
         if hasattr(func, '__theano_op__'):
+            # XXX: document that we are assuming func is pure -
+            #      if rval depends on globals or closure this Context is not
+            #      going to know that.
+            # -- hand control back to Python for duration of func
             rval = func(*args, **kwargs)
-            all_args = args + kwargs.values()
             if any(id(a) in self.watcher.svars for a in all_args):
-                sargs = [self.watcher.svars.get(id(a), a) for a in args]
-                skwargs = dict([(kw, self.watcher.svars.get(id(val), val))
-                    for kw, val in kwargs.items()])
-                s_rval = func.__theano_op__(*sargs, **skwargs)
+                s_rval = func.__theano_op__(*s_args, **s_kwargs)
                 self.watcher.shadow(rval, s_rval)
-        elif recurse:
-            print 'stepping into', func
-            vm = FrameVM(self.watcher, func)
-            rval = vm.call(args, kwargs)
-        else:
-            # print 'running built-in', func, func.__name__, args
+        elif (getattr(func, '__module__', None)
+                and func.__module__.startswith('numpy')):
+            # func is a numpy module method
+
             rval = func(*args, **kwargs)
             all_args = args + kwargs.values()
             if any(id(a) in self.watcher.svars for a in all_args):
@@ -346,11 +366,33 @@ class FrameVM(object):
                     self.watcher.shadow(rval, abs(*sargs))
                 elif func.__name__ == 'log10':
                     self.watcher.shadow(rval, theano.tensor.log10(*sargs))
-                elif func.__name__ == 'setdefault':
-                    # XXX verify that this is dict.setdefault
-                    pass
                 else:
                     raise NotImplementedError(func)
+            else:
+                # no argument was shadowed (e.g. zeros())
+                if isinstance(rval, np.ndarray):
+                    self.add_shadow(rval)
+        elif isinstance(func, np.ufunc):
+            raise NotImplementedError(func)
+        elif isinstance(getattr(func, '__self__', None), np.ndarray):
+            assert id(func.__self__) in self.watcher.svars
+            s_self = self.watcher.svars[id(func.__self__)]
+
+            if func.__name__ == 'reshape':
+                rval = func(*args, **kwargs)
+                self.watcher.shadow(rval, s_self.reshape(*s_args, **s_kwargs))
+            else:
+                raise NotImplementedError()
+        elif 'built-in' in str(func):
+            # -- built-in ndarray methods should be caught above, not here.
+            if func.__name__ in ('setdefault', 'range'):
+                rval = func(*args, **kwargs)
+            else:
+                raise NotImplementedError(func)
+        else:
+            print 'stepping into', func
+            vm = FrameVM(self.watcher, func)
+            rval = vm.call(args, kwargs)
         self.stack.append(rval)
 
     def op_COMPARE_OP(self, i, op, arg):
@@ -415,12 +457,48 @@ class FrameVM(object):
 
     def op_LOAD_ATTR(self, i, op, arg):
         # print 'LOAD_ATTR', self.names[arg]
-        TOS = self.stack[-1]
-        self.stack[-1] = getattr(TOS, self.func.func_code.co_names[arg])
-        tos = self.stack[-1]
-        if (isinstance(tos, np.ndarray)
-                and id(tos) not in self.watcher.svars):
-            self.add_shadow(self.stack[-1])
+        attr = self.func.func_code.co_names[arg]
+        #
+        # we would like to do
+        #    self.stack[-1] = getattr(TOS, attr)
+        #
+        # *EXCEPT* if attr is a property, then it actually represents a
+        # function call
+        tos = self.stack.pop(-1)
+
+        if isinstance(tos, np.ndarray):
+            if id(tos) not in self.watcher.svars:
+                #print tos
+                raise NotImplementedError('how did this var get here?',
+                        (id(tos), tos))
+            s_tos = self.watcher.svars[id(tos)]
+
+            # hard-code of how to deal with every ndarray property :/
+            # XXX: think of how not to list all of the methods twice (!) as in
+            # both here and in the CALL_FUNCTION handler
+            if attr == 'shape':
+                rval = tos.shape
+                self.watcher.shadow(rval, s_tos.shape)
+            elif attr == 'dtype':
+                rval = tos.dtype
+            elif attr == 'reshape':
+                rval = tos.reshape
+            elif attr == 'T':
+                rval = tos.T
+                self.watcher.shadow(rval, s_tos.T)
+            else:
+                raise NotImplementedError('ndarray attribute %s' % attr)
+            self.stack.append(rval)
+        else:
+            if id(tos) in self.watcher.svars:
+                raise NotImplementedError('what is going on here?')
+
+            print >> sys.stderr, "INFO: attribute access %s" % attr
+            rval = getattr(tos, attr)
+            self.stack.append(rval)
+            if (isinstance(rval, np.ndarray)
+                    and id(rval) not in self.watcher.svars):
+                self.add_shadow(rval)
 
     def op_LOAD_CONST(self, i, op, arg):
         self.stack.append(self.func.func_code.co_consts[arg])
@@ -504,7 +582,6 @@ class FrameVM(object):
         dct = self.stack[-1]
         dct[key] = val
 
-
     def op_RAISE_VARARGS(self, i, op, arg):
         if 1 <= arg:
             exc = self.stack.pop(-1)
@@ -523,6 +600,10 @@ class FrameVM(object):
         self.stack[-1] = b
         self.stack[-2] = a
 
+    def op_UNPACK_SEQUENCE(self, i, op, arg):
+        tos = self.stack.pop(-1)
+        self.stack.extend(tos[::-1])
+
 
 class Context(object):
     def __init__(self):
@@ -532,7 +613,9 @@ class Context(object):
 
     def shadow(self, rval, sval):
         assert hasattr(sval, 'type')  # assert Theano variable
-        self.svars[id(rval)] = sval
+        self.svars.setdefault(id(rval), sval)
+        # -- assert postcondition
+        assert sval is self.svars[id(rval)]
         self.nogc.append(rval)
 
     def call(self, fn, args=(), kwargs={}):
