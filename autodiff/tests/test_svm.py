@@ -2,6 +2,9 @@ import numpy as np
 from autodiff import fmin_l_bfgs_b
 
 def test_svm():
+    """
+    This test case should match examples/linear_svm.py
+    """
 
     rng = np.random.RandomState(1)
 
