@@ -55,12 +55,19 @@ class FrameVM(object):
         #    program can guarantee that all views of that memory are
         #    immutable.
         borrow = False
-        if x.dtype == bool:
+        if isinstance(x, (int, float)):
+            s_x = theano.shared(np.asarray(x), borrow=borrow)
+        elif x.dtype == bool:
             print >> sys.stderr, "Warning: Theano has no bool, upgrading to uint8"
             s_x = theano.shared(x.astype('uint8'), borrow=borrow)
         else:
             s_x = theano.shared(x, borrow=borrow)
         self.watcher.shadow(x, s_x)
+
+    def ensure_shadow(self, x):
+        if id(x) not in self.watcher.svars:
+            self.add_shadow(x)
+        return self.watcher.svars[id(x)]
 
     def call(self, args, kwargs):
 
@@ -356,8 +363,14 @@ class FrameVM(object):
                 if 0: pass
                 elif func.__name__ == 'abs':
                     self.watcher.shadow(rval, abs(*s_args))
+                elif func.__name__ == 'any':
+                    print 'WARNING: ignoring dependency through np.any'
                 elif func.__name__ == 'dot':
                     self.watcher.shadow(rval, theano.tensor.dot(*s_args))
+                elif func.__name__ == 'exp':
+                    self.watcher.shadow(rval, theano.tensor.exp(*s_args))
+                elif func.__name__ == 'log':
+                    self.watcher.shadow(rval, theano.tensor.log(*s_args))
                 elif func.__name__ == 'log10':
                     self.watcher.shadow(rval, theano.tensor.log10(*s_args))
                 elif func.__name__ == 'maximum':
@@ -378,7 +391,13 @@ class FrameVM(object):
             assert id(func.__self__) in self.watcher.svars
             s_self = self.watcher.svars[id(func.__self__)]
 
-            if func.__name__ == 'reshape':
+            if 0: pass
+            elif func.__name__ == 'copy':
+                assert not args
+                assert not kwargs
+                rval = func()
+                self.watcher.shadow(rval, s_self.copy())
+            elif func.__name__ == 'reshape':
                 rval = func(*args, **kwargs)
                 self.watcher.shadow(rval, s_self.reshape(*s_args, **s_kwargs))
             elif func.__name__ == 'sum':
@@ -422,6 +441,10 @@ class FrameVM(object):
             else:
                 raise NotImplementedError()
 
+    def op_DUP_TOPX(self, i, op, arg):
+        assert arg > 0
+        self.stack.extend(self.stack[-arg:])
+
     def op_FOR_ITER(self, i, op, arg):
         # either push tos.next()
         # or pop tos and send (arg)
@@ -433,6 +456,32 @@ class FrameVM(object):
         except StopIteration:
             self.stack.pop(-1)
             return ('rel', arg)
+
+    def op_INPLACE_ADD(self, i, op, arg):
+        tos = self.stack.pop(-1)
+        tos1 = self.stack.pop(-1)
+
+        r = tos1
+        r += tos
+        self.stack.append(r)
+        if (id(tos) in self.watcher.svars
+                or id(tos1) in self.watcher.svars):
+            s_tos = self.ensure_shadow(tos)
+            s_tos1 = self.ensure_shadow(tos1)
+            self.watcher.shadow(r, s_tos + s_tos1)
+
+    def op_INPLACE_SUBTRACT(self, i, op, arg):
+        tos = self.stack.pop(-1)
+        tos1 = self.stack.pop(-1)
+
+        r = tos1
+        r -= tos
+        self.stack.append(r)
+        if (id(tos) in self.watcher.svars
+                or id(tos1) in self.watcher.svars):
+            s_tos = self.ensure_shadow(tos)
+            s_tos1 = self.ensure_shadow(tos1)
+            self.watcher.shadow(r, s_tos - s_tos1)
 
     def op_JUMP_ABSOLUTE(self, i, op, arg):
         # print 'sending', arg
@@ -480,7 +529,10 @@ class FrameVM(object):
             # hard-code of how to deal with every ndarray property :/
             # XXX: think of how not to list all of the methods twice (!) as in
             # both here and in the CALL_FUNCTION handler
-            if attr == 'dtype':
+            if 0: pass
+            elif attr == 'copy':
+                rval = tos.copy
+            elif attr == 'dtype':
                 rval = tos.dtype
             elif attr == 'reshape':
                 rval = tos.reshape
@@ -588,6 +640,25 @@ class FrameVM(object):
         dct = self.stack[-1]
         dct[key] = val
 
+    def op_STORE_SUBSCR(self, i, op, arg):
+        # Implements TOS1[TOS] = TOS2.
+        tos = self.stack.pop(-1)
+        tos1 = self.stack.pop(-1)
+        tos2 = self.stack.pop(-1)
+
+        tos1[tos] = tos2
+
+        watcher = self.watcher
+        svars = watcher.svars
+        # tos can't be real-valued so there's no gradient through it
+        if id(tos1) in svars or id(tos2) in svars:
+            s_tos1 = self.ensure_shadow(tos1)
+            s_tos2 = self.ensure_shadow(tos2)
+
+            new_s_tos1 = theano.tensor.set_subtensor(s_tos1[tos], s_tos2)
+            svars[id(tos1)] = new_s_tos1
+
+
     def op_RAISE_VARARGS(self, i, op, arg):
         if 1 <= arg:
             exc = self.stack.pop(-1)
@@ -605,6 +676,14 @@ class FrameVM(object):
         b = self.stack[-2]
         self.stack[-1] = b
         self.stack[-2] = a
+
+    def op_ROT_THREE(self, i, op, arg):
+        a = self.stack[-1]
+        b = self.stack[-2]
+        c = self.stack[-3]
+        self.stack[-1] = b
+        self.stack[-2] = c
+        self.stack[-3] = a
 
     def op_UNPACK_SEQUENCE(self, i, op, arg):
         tos = self.stack.pop(-1)
