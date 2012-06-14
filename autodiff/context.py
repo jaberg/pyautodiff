@@ -381,6 +381,9 @@ class FrameVM(object):
             if func.__name__ == 'reshape':
                 rval = func(*args, **kwargs)
                 self.watcher.shadow(rval, s_self.reshape(*s_args, **s_kwargs))
+            elif func.__name__ == 'sum':
+                rval = func(*args, **kwargs)
+                self.watcher.shadow(rval, s_self.sum(*s_args, **s_kwargs))
             else:
                 raise NotImplementedError()
         elif 'built-in' in str(func):
@@ -476,13 +479,15 @@ class FrameVM(object):
             # hard-code of how to deal with every ndarray property :/
             # XXX: think of how not to list all of the methods twice (!) as in
             # both here and in the CALL_FUNCTION handler
-            if attr == 'shape':
-                rval = tos.shape
-                self.watcher.shadow(rval, s_tos.shape)
-            elif attr == 'dtype':
+            if attr == 'dtype':
                 rval = tos.dtype
             elif attr == 'reshape':
                 rval = tos.reshape
+            elif attr == 'shape':
+                rval = tos.shape
+                self.watcher.shadow(rval, s_tos.shape)
+            elif attr == 'sum':
+                rval = tos.sum
             elif attr == 'T':
                 rval = tos.T
                 self.watcher.shadow(rval, s_tos.T)
