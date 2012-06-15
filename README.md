@@ -8,7 +8,10 @@ Automatic differentiation for NumPy (very new, experimental, unreliable, etc... 
     # -> [array(-1.0)]
 
 Dependencies:
+  * numpy
   * Theano [git master](https://github.com/Theano/Theano.git) (*currently no official release will work*)
+
+  pip install -r requirements.txt
 
 
 Thanks:
