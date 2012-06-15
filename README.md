@@ -11,7 +11,10 @@ Dependencies:
   * numpy
   * Theano [git master](https://github.com/Theano/Theano.git) (*currently no official release will work*)
 
-  pip install -r requirements.txt
+Installation:
+
+    pip install -r requirements.txt
+    python setup.py install
 
 
 Thanks:
