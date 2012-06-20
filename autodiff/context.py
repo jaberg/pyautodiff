@@ -411,6 +411,9 @@ class FrameVM(object):
                 assert not kwargs
                 rval = func()
                 self.watcher.shadow(rval, s_self.copy())
+            elif func.__name__ == 'mean':
+                rval = func(*args, **kwargs)
+                self.watcher.shadow(rval, s_self.mean(*s_args, **s_kwargs))
             elif func.__name__ == 'reshape':
                 rval = func(*args, **kwargs)
                 self.watcher.shadow(rval, s_self.reshape(*s_args, **s_kwargs))
@@ -556,18 +559,11 @@ class FrameVM(object):
             # hard-code of how to deal with every ndarray property :/
             # XXX: think of how not to list all of the methods twice (!) as in
             # both here and in the CALL_FUNCTION handler
-            if 0: pass
-            elif attr == 'copy':
-                rval = tos.copy
-            elif attr == 'dtype':
-                rval = tos.dtype
-            elif attr == 'reshape':
-                rval = tos.reshape
+            if attr in ('copy', 'dtype', 'mean', 'reshape', 'sum'):
+                rval = getattr(tos, attr)
             elif attr == 'shape':
                 rval = tos.shape
                 self.watcher.shadow(rval, s_tos.shape)
-            elif attr == 'sum':
-                rval = tos.sum
             elif attr == 'T':
                 rval = tos.T
                 self.watcher.shadow(rval, s_tos.T)
