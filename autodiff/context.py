@@ -8,13 +8,14 @@ This file demonstrates two applications of this technique:
 """
 
 import __builtin__
+from functools import partial
+import inspect
+import logging; logger = logging.getLogger(__name__)
+import opcode
 import os
 import sys
-import inspect
 import trace
-import opcode
 
-from functools import partial
 
 import numpy as np
 import theano
@@ -22,6 +23,8 @@ import theano
 from .utils import itercode
 
 from scipy.optimize.lbfgsb import fmin_l_bfgs_b
+
+logger.setLevel(logging.INFO)
 
 # Opcode help: http://docs.python.org/library/dis.html
 
