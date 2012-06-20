@@ -93,3 +93,15 @@ def test_loop():
     assert np.all(y == 0)
     assert np.all(y2 == 16)
 
+
+def test_low_integer_constants():
+    one = 2 - 1
+    # CPython re-uses ids of low integer constants
+    # which kind of plays hell with the id-tracking done in the Context object
+    assert one is 1
+    # the current implementation crashes here because the addition creates a
+    # shadow for the constant `1`, which then gets picked up by the axis
+    # argument, and causes Theano to barf because axis can't be a symbolic
+    # variable.
+    r = Context().call(lambda x: (1 + x).sum(axis=1), (np.ones((2, 3)),))
+    assert np.allclose(r, [6, 6])
