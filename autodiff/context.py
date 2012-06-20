@@ -59,6 +59,8 @@ class FrameVM(object):
         #    immutable.
         borrow = False
         if isinstance(x, (int, float)):
+            if type(x) is int and 0 <= x < 256:
+                raise Exception('cannot shadow low integer constants')
             s_x = theano.shared(np.asarray(x), borrow=borrow)
         elif x.dtype == bool:
             print >> sys.stderr, "Warning: Theano has no bool, upgrading to uint8"
@@ -68,6 +70,14 @@ class FrameVM(object):
         self.watcher.shadow(x, s_x)
 
     def ensure_shadow(self, x):
+        # CPython re-uses ids for low integers, so we can't shadow them
+        if type(x) is int and 0 <= x < 256:
+            # It is admitedly a misnomer that ensure_shadow() does not in fact
+            # create an svars entry for id(x)...  not sure how to deal with
+            # that.
+            assert id(x) not in self.watcher.svars
+            return theano.tensor.as_tensor_variable(x)
+
         if id(x) not in self.watcher.svars:
             self.add_shadow(x)
         return self.watcher.svars[id(x)]
@@ -211,6 +221,7 @@ class FrameVM(object):
     def op_BINARY_ADD(self, i, op, arg):
         arg2 = self.stack.pop(-1)
         arg1 = self.stack.pop(-1)
+        # No Theano vars allowed on the stack
         assert not hasattr(arg1, 'type')
         assert not hasattr(arg2, 'type')
         r = arg1 + arg2
@@ -415,7 +426,7 @@ class FrameVM(object):
             else:
                 raise NotImplementedError(func)
         else:
-            print 'stepping into', func
+            logger.debug('stepping into %s' % str(func))
             vm = FrameVM(self.watcher, func)
             rval = vm.call(args, kwargs)
         self.stack.append(rval)
@@ -564,7 +575,7 @@ class FrameVM(object):
                 raise NotImplementedError('ndarray attribute %s' % attr)
             self.stack.append(rval)
         else:
-            print >> sys.stderr, "INFO: attribute access %s" % attr
+            logger.debug('attribute access %s' % attr)
             rval = getattr(tos, attr)
             self.stack.append(rval)
             if (isinstance(rval, np.ndarray)
