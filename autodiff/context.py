@@ -366,6 +366,7 @@ class FrameVM(object):
                     and func.__module__.startswith('numpy'))
                 or isinstance(func, np.ufunc)
                 or str(func) == '<built-in function abs>'
+                or str(func) == '<built-in function max>'
                 ):
 
             rval = func(*args, **kwargs)
@@ -389,6 +390,12 @@ class FrameVM(object):
                     self.watcher.shadow(rval, theano.tensor.log10(*s_args))
                 elif func.__name__ == 'maximum':
                     self.watcher.shadow(rval, theano.tensor.maximum(*s_args))
+                elif func.__name__ == 'max':
+                    assert str(func) == '<built-in function max>'
+                    # N.B. builtin max -> tensor.maximum
+                    s_rval = theano.tensor.maximum(*s_args)
+                    assert s_rval.ndim == 0  # builtin max can't make vector
+                    self.watcher.shadow(rval, s_rval)
                 elif func.__name__ == 'mean':
                     self.watcher.shadow(rval, theano.tensor.mean(*s_args))
                 elif func.__name__ == 'sum':
