@@ -307,9 +307,22 @@ class FrameVM(object):
         self.stack[-2:] = [rval]
         w = self.watcher
         if id(tos) in w.svars or id(tos1) in w.svars:
-            s_tos = self.ensure_shadow(tos)
-            s_tos1 = self.ensure_shadow(tos1)
-            s_rval = s_tos1[s_tos]
+            if id(tos) in w.svars:
+                s_tos = w.svars[id(tos)]
+                s_tos1 = self.ensure_shadow(tos1)
+                s_rval = s_tos1[s_tos]
+            elif type(tos) == int:
+                # don't make a symbol for this constant yet
+                s_tos1 = self.ensure_shadow(tos1)
+                s_rval = s_tos1[tos]
+            elif type(tos) == slice:
+                raise NotImplementedError('x[slice]')
+            elif type(tos) == tuple:
+                assert id(tos1) in w.svars
+                s_tos1 = w.svars[id(tos1)]
+                s_rval = s_tos1.__getitem__(tos)
+            else:
+                raise NotImplementedError()
             w.shadow(rval, s_rval)
 
     def op_BUILD_MAP(self, i, op, arg):
