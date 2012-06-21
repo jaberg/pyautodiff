@@ -8,13 +8,14 @@ This file demonstrates two applications of this technique:
 """
 
 import __builtin__
+from functools import partial
+import inspect
+import logging; logger = logging.getLogger(__name__)
+import opcode
 import os
 import sys
-import inspect
 import trace
-import opcode
 
-from functools import partial
 
 import numpy as np
 import theano
@@ -22,6 +23,8 @@ import theano
 from .utils import itercode
 
 from scipy.optimize.lbfgsb import fmin_l_bfgs_b
+
+logger.setLevel(logging.INFO)
 
 # Opcode help: http://docs.python.org/library/dis.html
 
@@ -56,6 +59,8 @@ class FrameVM(object):
         #    immutable.
         borrow = False
         if isinstance(x, (int, float)):
+            if type(x) is int and 0 <= x < 256:
+                raise Exception('cannot shadow low integer constants')
             s_x = theano.shared(np.asarray(x), borrow=borrow)
         elif x.dtype == bool:
             print >> sys.stderr, "Warning: Theano has no bool, upgrading to uint8"
@@ -65,6 +70,14 @@ class FrameVM(object):
         self.watcher.shadow(x, s_x)
 
     def ensure_shadow(self, x):
+        # CPython re-uses ids for low integers, so we can't shadow them
+        if type(x) is int and 0 <= x < 256:
+            # It is admitedly a misnomer that ensure_shadow() does not in fact
+            # create an svars entry for id(x)...  not sure how to deal with
+            # that.
+            assert id(x) not in self.watcher.svars
+            return theano.tensor.as_tensor_variable(x)
+
         if id(x) not in self.watcher.svars:
             self.add_shadow(x)
         return self.watcher.svars[id(x)]
@@ -208,6 +221,7 @@ class FrameVM(object):
     def op_BINARY_ADD(self, i, op, arg):
         arg2 = self.stack.pop(-1)
         arg1 = self.stack.pop(-1)
+        # No Theano vars allowed on the stack
         assert not hasattr(arg1, 'type')
         assert not hasattr(arg2, 'type')
         r = arg1 + arg2
@@ -397,6 +411,9 @@ class FrameVM(object):
                 assert not kwargs
                 rval = func()
                 self.watcher.shadow(rval, s_self.copy())
+            elif func.__name__ == 'mean':
+                rval = func(*args, **kwargs)
+                self.watcher.shadow(rval, s_self.mean(*s_args, **s_kwargs))
             elif func.__name__ == 'reshape':
                 rval = func(*args, **kwargs)
                 self.watcher.shadow(rval, s_self.reshape(*s_args, **s_kwargs))
@@ -412,7 +429,7 @@ class FrameVM(object):
             else:
                 raise NotImplementedError(func)
         else:
-            print 'stepping into', func
+            logger.debug('stepping into %s' % str(func))
             vm = FrameVM(self.watcher, func)
             rval = vm.call(args, kwargs)
         self.stack.append(rval)
@@ -542,18 +559,11 @@ class FrameVM(object):
             # hard-code of how to deal with every ndarray property :/
             # XXX: think of how not to list all of the methods twice (!) as in
             # both here and in the CALL_FUNCTION handler
-            if 0: pass
-            elif attr == 'copy':
-                rval = tos.copy
-            elif attr == 'dtype':
-                rval = tos.dtype
-            elif attr == 'reshape':
-                rval = tos.reshape
+            if attr in ('copy', 'dtype', 'mean', 'reshape', 'sum'):
+                rval = getattr(tos, attr)
             elif attr == 'shape':
                 rval = tos.shape
                 self.watcher.shadow(rval, s_tos.shape)
-            elif attr == 'sum':
-                rval = tos.sum
             elif attr == 'T':
                 rval = tos.T
                 self.watcher.shadow(rval, s_tos.T)
@@ -561,7 +571,7 @@ class FrameVM(object):
                 raise NotImplementedError('ndarray attribute %s' % attr)
             self.stack.append(rval)
         else:
-            print >> sys.stderr, "INFO: attribute access %s" % attr
+            logger.debug('attribute access %s' % attr)
             rval = getattr(tos, attr)
             self.stack.append(rval)
             if (isinstance(rval, np.ndarray)
