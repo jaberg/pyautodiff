@@ -8,14 +8,14 @@ import shutil
 import glob
 
 DISTNAME = 'pyautodiff'
-DESCRIPTION = ''
-LONG_DESCRIPTION = open('README.md').read()
+DESCRIPTION = 'Automatic differentiation of NumPy code'
+LONG_DESCRIPTION = open('README.txt').read()
 MAINTAINER = 'James Bergstra'
 MAINTAINER_EMAIL = 'james.bergstra@gmail.com'
-URL = ''
+URL = 'https://github.com/jaberg/pyautodiff'
 LICENSE = 'new BSD'
-DOWNLOAD_URL = ''
-VERSION = '0.1.01'
+DOWNLOAD_URL = 'https://github.com/jaberg/pyautodiff/tarball/master'
+VERSION = '0.0.1'
 
 import setuptools  # we are using a setuptools namespace
 from numpy.distutils.core import setup
@@ -68,13 +68,13 @@ if __name__ == "__main__":
           download_url=DOWNLOAD_URL,
           long_description=LONG_DESCRIPTION,
           zip_safe=True,  # the package can run out of an .egg file
-          install_requires=['numpy>=1.3.0', 'theano>=0.5'],
+          install_requires=open('requirements.txt').read().split('\n'),
           scripts=glob.glob(os.path.join("bin","*")),
           classifiers=[
               'Intended Audience :: Science/Research',
               'Intended Audience :: Developers',
               'License :: OSI Approved',
-              'Programming Language :: C',
+              #'Programming Language :: C',
               'Programming Language :: Python',
               'Topic :: Software Development',
               'Topic :: Scientific/Engineering',
