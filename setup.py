@@ -20,6 +20,10 @@ VERSION = '0.0.1'
 import setuptools  # we are using a setuptools namespace
 from numpy.distutils.core import setup
 
+for token in open('requirements.txt').read().split('\n'):
+    if 'git+' in token:
+        print 'setup.py cannot work while git targets are in requirements.txt'
+        sys.exit(-1)
 
 if __name__ == "__main__":
 
