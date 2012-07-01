@@ -28,12 +28,15 @@ def args_from_vector(x, orig_args):
     return rval
 
 
-def theano_f_df(fn, args, mode):
+def theano_f_df(fn, args, mode, other_args=(), compile_fn=True):
+    """
+    Compute gradient wrt args, but not other_args
+    """
     # -- inspect bytecode of fn to determine derivative wrt args
 
     # hacky way to get call graph (we could do it without actually running it)
     ctxt = Context()
-    cost = ctxt.call(fn, args)
+    cost = ctxt.call(fn, tuple(args) + tuple(other_args))
 
     # construct bytecode for f_df() that
     # * unpacks x-> args
@@ -73,8 +76,18 @@ def theano_f_df(fn, args, mode):
     # because numba isn't quite there yet. For now we just compile the call
     # graph we already built theano-style.
     #s_cost = theano.printing.Print('s_cost')(s_cost)
-    f_df = theano.function([s_x], [s_cost, g_x], mode=mode)
-    return f_df
+    s_other_args = [ctxt.svars[id(w)] for w in other_args]
+
+    if not compile_fn:
+        return None, locals()
+    else:
+        if mode is None:
+            f_df = theano.function([s_x] + s_other_args, [s_cost, g_x])
+        else:
+            f_df = theano.function([s_x] + s_other_args, [s_cost, g_x], mode=mode)
+
+        return f_df, locals()
+
 
 
 def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
@@ -95,7 +108,7 @@ def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
 
     """
 
-    f_df = theano_f_df(fn, args, mode=theano_mode)
+    f_df, lvars  = theano_f_df(fn, args, mode=theano_mode)
 
     x = vector_from_args(args)
 

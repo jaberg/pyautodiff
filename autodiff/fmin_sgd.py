@@ -3,45 +3,68 @@ Function minimization drivers based on stochastic gradient descent (SGD).
 
 """
 
-def sgd_iter(fn, args, stepsize):
-    raise NotImplementedError()
+import theano
+
+from .fmin_scipy import vector_from_args, args_from_vector
+from .fmin_scipy import theano_f_df
+
+class FMinSGD(object):
+    def __init__(self, fn, args, stream, stepsize, theano_mode=None):
+        stream0 = stream[0]
+        f_df, l_vars = theano_f_df(fn, args, mode=theano_mode,
+                other_args=(stream0,),
+                compile_fn=False)
+
+        s_args = l_vars['orig_s_args']
+        s_cost = l_vars['orig_s_cost']
+        g_args = theano.tensor.grad(s_cost, s_args)
+
+        # -- shared var into which we will write stream entries
+        s_stream0 = l_vars['ctxt'].svars[id(stream0)]
+
+        update_fn = theano.function([],
+                [s_cost],
+                updates=[(a, a - stepsize * g) for a, g, in zip(s_args, g_args)],
+                )
+
+        self.s_args = s_args
+        self.s_cost = s_cost
+        self.g_args = g_args
+        self.s_stream0 = s_stream0
+        self.update_fn = update_fn
+        self.stream = stream
+        self.stream_iter = iter(stream)
+
+    def __iter__(self):
+        return self
+
+    def next(self, N=1):
+        # XXX: stopping criterion here
+        fn = self.update_fn
+        setval = self.s_stream0.set_value
+        stream_iter_next = self.stream_iter.next
+        while N:
+            setval(stream_iter_next(), borrow=True)
+            rval = fn()
+            N -= 1
+        return rval
+
+    @property
+    def current_args(self):
+        return [a.get_value() for a in self.s_args]
 
 
-def fmin_sgd(fn, args, stepsize, n_steps):
+
+def fmin_sgd(*args, **kwargs):
     """
     """
-    # XXX REFACTOR WITH FMIN
-
-    # STEP 1: inspect bytecode of fn to determine derivative wrt args
-
-    # hacky way to get call graph (we could do it without actually running it)
-    ctxt = Context()
-    cost = ctxt.call(fn, args)
-
-    # construct bytecode for f_df() that
-    # * unpacks x-> args
-    # * computes f, dx
-    s_args = [ctxt.svars[id(w)] for w in args]
-    s_cost = ctxt.svars[id(cost)]
-
-    g_args = theano.tensor.grad(s_cost, s_args)
-
-    # [optional] pass bytecode for g() to numba.translate to compile a faster
-    # implementation for the repeated calls that are coming up
-
-    # XXX: hacky current thing does not pass by a proper byte-code optimizer
-    # because numba isn't quite there yet. For now we just compile the call
-    # graph we already built theano-style.
-    update_fn = theano.function([], [s_cost],
-            update=[(a, a - stepsize * g) for a, g, in zip(s_args, g_args)],
-            )
-
-    # XXX: stopping criterion here
-    for i in xrange(10):
-        print update_fn()
-
-    return [a.get_value() for a in s_args]
+    obj = FMinSGD(*args, **kwargs)
+    while True:
+        try:
+            val = obj.next(100)
+            # print val
+        except StopIteration:
+            break
+    return obj.current_args
 
 
-def fmin_asgd(fn, args, stepsize, n_steps):
-    raise NotImplementedError()
