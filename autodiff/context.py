@@ -743,6 +743,15 @@ class FrameVM(object):
         self.stack[-2] = c
         self.stack[-3] = a
 
+    def op_UNARY_NEGATIVE(self, i, op, arg):
+        arg1 = self.stack.pop(-1)
+        assert not hasattr(arg1, 'type')
+        r = -arg1
+        self.stack.append(r)
+        if id(arg1) in self.watcher.svars:
+            s1 = self.ensure_shadow(arg1)
+            self.watcher.shadow(r,  -s1)
+
     def op_UNPACK_SEQUENCE(self, i, op, arg):
         tos = self.stack.pop(-1)
         self.stack.extend(tos[::-1])
