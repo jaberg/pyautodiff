@@ -24,9 +24,7 @@ Low-level implementation API (unstable!):
 
 from fmin_scipy import fmin_l_bfgs_b
 
-from fmin_sgd import sgd_iter
 from fmin_sgd import fmin_sgd
-from fmin_sgd import fmin_asgd
 
 from gradient import Gradient
 
