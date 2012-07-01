@@ -230,7 +230,10 @@ class FrameVM(object):
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
             s2 = self.ensure_shadow(arg2)
-            self.watcher.shadow(r, s1 + s2)
+            if isinstance(r, np.ndarray):
+                self.watcher.shadow(r, (s1 + s2).astype(str(r.dtype)))
+            else:
+                self.watcher.shadow(r, s1 + s2)
             #print 'added sym'
 
     def op_BINARY_DIVIDE(self, i, op, arg):
@@ -244,7 +247,10 @@ class FrameVM(object):
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
             s2 = self.ensure_shadow(arg2)
-            self.watcher.shadow(r, s1 / s2)
+            if isinstance(r, np.ndarray):
+                self.watcher.shadow(r, (s1 / s2).astype(str(r.dtype)))
+            else:
+                self.watcher.shadow(r, s1 / s2)
 
     def op_BINARY_FLOOR_DIVIDE(self, i, op, arg):
         arg2 = self.stack.pop(-1)
@@ -257,7 +263,10 @@ class FrameVM(object):
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
             s2 = self.ensure_shadow(arg2)
-            self.watcher.shadow(r, s1 // s2)
+            if isinstance(r, np.ndarray):
+                self.watcher.shadow(r, (s1 // s2).astype(str(r.dtype)))
+            else:
+                self.watcher.shadow(r, s1 // s2)
 
     def op_BINARY_SUBTRACT(self, i, op, arg):
         arg2 = self.stack.pop(-1)
@@ -270,7 +279,10 @@ class FrameVM(object):
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
             s2 = self.ensure_shadow(arg2)
-            self.watcher.shadow(r,  s1 - s2)
+            if isinstance(r, np.ndarray):
+                self.watcher.shadow(r, (s1 - s2).astype(str(r.dtype)))
+            else:
+                self.watcher.shadow(r, s1 - s2)
 
     def op_BINARY_MULTIPLY(self, i, op, arg):
         arg2 = self.stack.pop(-1)
@@ -283,7 +295,10 @@ class FrameVM(object):
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
             s2 = self.ensure_shadow(arg2)
-            self.watcher.shadow(r, s1 * s2)
+            if isinstance(r, np.ndarray):
+                self.watcher.shadow(r, (s1 * s2).astype(str(r.dtype)))
+            else:
+                self.watcher.shadow(r, s1 * s2)
             #print 'mul sym', id(r)
 
     def op_BINARY_POWER(self, i, op, arg):
@@ -740,8 +755,12 @@ class Context(object):
         # XXX: rethink to avoid actually holding on to all these intermediates.
 
     def shadow(self, rval, sval):
-        assert hasattr(sval, 'type')  # assert Theano variable
+        assert hasattr(sval, 'type')  # assert sval is Theano variable
         self.svars.setdefault(id(rval), sval)
+        # -- shadow vars have to match dtype and ndim
+        if isinstance(rval, np.ndarray):
+            assert str(rval.dtype) == sval.dtype, (rval, sval)
+            assert rval.ndim == sval.ndim, (rval, sval)
         # -- assert postcondition
         assert sval is self.svars[id(rval)]
         self.nogc.append(rval)
