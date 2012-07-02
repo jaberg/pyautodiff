@@ -15,6 +15,10 @@ def vector_from_args(args):
     args_sizes = [w.size for w in args]
     x_size = sum(args_sizes)
     x = np.empty(x_size, dtype='float64') # has to be float64 for fmin_l_bfgs_b
+    i = 0
+    for w in args:
+        x[i: i + w.size] = w.flatten()
+        i += w.size
     return x
 
 
@@ -48,7 +52,6 @@ def theano_f_df(fn, args, mode, other_args=(), compile_fn=True):
     s_args = []
     i = 0
     for s_w, w in zip(orig_s_args, args):
-        x[i: i + w.size] = w.flatten()
         if w.shape:
             s_xi = s_x[i: i + w.size].reshape(w.shape)
         else:
@@ -68,7 +71,6 @@ def theano_f_df(fn, args, mode, other_args=(), compile_fn=True):
     s_cost = memo[orig_s_cost]
     g_x = theano.tensor.grad(s_cost, s_x)
 
-
     # [optional] pass bytecode for g() to numba.translate to compile a faster
     # implementation for the repeated calls that are coming up
 
@@ -77,6 +79,9 @@ def theano_f_df(fn, args, mode, other_args=(), compile_fn=True):
     # graph we already built theano-style.
     #s_cost = theano.printing.Print('s_cost')(s_cost)
     s_other_args = [ctxt.svars[id(w)] for w in other_args]
+
+    ##theano.printing.debugprint(s_cost)
+    ##s_cost = theano.printing.Print('s_cost')(s_cost)
 
     if not compile_fn:
         return None, locals()
