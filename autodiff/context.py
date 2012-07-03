@@ -9,12 +9,14 @@ This file demonstrates two applications of this technique:
 
 import __builtin__
 from functools import partial
+import ctypes
 import inspect
 import logging; logger = logging.getLogger(__name__)
 import opcode
 import os
 import sys
 import trace
+import types
 
 
 import numpy as np
@@ -26,7 +28,25 @@ from scipy.optimize.lbfgsb import fmin_l_bfgs_b
 
 logger.setLevel(logging.INFO)
 
+# from theano.tensor.shared_randomstreams import RandomStreams
+from theano.sandbox.mrg_rng import MRG_RandomStreams as RandomStreams
+
+# XXX This will not do - seed must be exposed.
+global_randomstreams = RandomStreams(seed=123)
+
+
 # Opcode help: http://docs.python.org/library/dis.html
+
+# -- cellget returns the contents of a cell
+cellget = ctypes.pythonapi.PyCell_Get
+cellget.restype = ctypes.py_object
+cellget.argtypes = (ctypes.py_object,)
+
+# -- cellmake creates a cell pointer
+cellmake = ctypes.pythonapi.PyCell_New
+cellmake.restype = ctypes.py_object
+cellmake.argtypes = (ctypes.py_object,)
+
 
 class Unassigned(object): """Unassigned value"""
 
@@ -63,8 +83,8 @@ class FrameVM(object):
                 raise Exception('cannot shadow low integer constants')
             s_x = theano.shared(np.asarray(x), borrow=borrow)
         elif x.dtype == bool:
-            print >> sys.stderr, "Warning: Theano has no bool, upgrading to uint8"
-            s_x = theano.shared(x.astype('uint8'), borrow=borrow)
+            print >> sys.stderr, "Warning: Theano has no bool, upgrading to int8"
+            s_x = theano.shared(x.astype('int8'), borrow=borrow)
         else:
             s_x = theano.shared(x, borrow=borrow)
         self.watcher.shadow(x, s_x)
@@ -360,9 +380,18 @@ class FrameVM(object):
         else:
             self.stack.append(())
 
-    def op_CALL_FUNCTION(self, i, op, arg):
+    def op_CALL_FUNCTION(self, i, op, arg, call_vargs=None, call_kwargs=None):
+        if call_vargs is None:
+            # -- these are the things passed with *foo syntax
+            call_vargs = ()
+
+        if call_kwargs is None:
+            # -- these are the things passed with **foo syntax
+            call_kwargs = {}
+
         n_args = arg & 0xFF
         n_kwargs = (arg & 0xFF00) >> 8
+        #print 'N_ARGS', n_args, n_kwargs, call_vargs
         assert not (arg >> 16) # what would this stuff up here mean?
         kwargs = dict([(self.stack[-2 * ii], self.stack[-2 * ii + 1])
                 for ii in range(n_kwargs, 0, -1)])
@@ -373,6 +402,10 @@ class FrameVM(object):
         # -- pop the function itself off the stack
         func = self.stack.pop(-1)
 
+        args = args + list(call_vargs)
+        orig_kwargs_size = len(kwargs)
+        kwargs.update(call_kwargs)
+        assert len(kwargs) == orig_kwargs_size + len(call_kwargs)
         #print dir(func)
         #print func.__self__
         all_args = args + kwargs.values()
@@ -455,12 +488,27 @@ class FrameVM(object):
             elif func.__name__ == 'sum':
                 rval = func(*args, **kwargs)
                 self.watcher.shadow(rval, s_self.sum(*s_args, **s_kwargs))
+            elif func.__name__ == 'astype':
+                rval = func(*args, **kwargs)
+                assert not kwargs
+                assert list(args) == s_args
+                self.watcher.shadow(rval, s_self.astype(str(args[0])))
             else:
                 raise NotImplementedError()
         elif 'built-in' in str(func):
             # -- built-in ndarray methods should be caught above, not here.
-            if func.__name__ in ('setdefault', 'range'):
+            if func.__name__ in ('setdefault',):
                 rval = func(*args, **kwargs)
+            elif func.__name__ in ('range',):
+                rval = func(*args, **kwargs)
+                if any(id(a) in self.watcher.svars for a in all_args):
+                    raise NotImplementedError()
+            elif 'method rand of mtrand.RandomState' in str(func):
+                rval = func(*args, **kwargs)
+                assert not kwargs # -- rand doesn't take kwargs right?
+                self.watcher.shadow(rval,
+                        global_randomstreams.uniform(
+                            low=0, high=1, size=s_args, dtype=rval.dtype))
             else:
                 raise NotImplementedError(func)
         else:
@@ -468,6 +516,10 @@ class FrameVM(object):
             vm = FrameVM(self.watcher, func)
             rval = vm.call(args, kwargs)
         self.stack.append(rval)
+
+    def op_CALL_FUNCTION_VAR(self, i, op, arg):
+        call_vargs = self.stack.pop(-1)
+        return self.op_CALL_FUNCTION(i, op, arg, call_vargs=call_vargs)
 
     def op_COMPARE_OP(self, i, op, arg):
         opname = opcode.cmp_op[arg]
@@ -485,11 +537,10 @@ class FrameVM(object):
         if any(id(a) in self.watcher.svars for a in [left, right]):
             sargs = [self.watcher.svars.get(id(a), a) for a in [left, right]]
             tos = self.stack[-1]
-            if 0: pass
-            elif opname == '<':
-                self.watcher.shadow(tos, theano.tensor.lt(left, right))
+            if   opname == '<':
+                self.watcher.shadow(tos, theano.tensor.lt(*sargs))
             elif opname == '>':
-                self.watcher.shadow(tos, theano.tensor.gt(left, right))
+                self.watcher.shadow(tos, theano.tensor.gt(*sargs))
             else:
                 raise NotImplementedError()
 
@@ -594,7 +645,7 @@ class FrameVM(object):
             # hard-code of how to deal with every ndarray property :/
             # XXX: think of how not to list all of the methods twice (!) as in
             # both here and in the CALL_FUNCTION handler
-            if attr in ('copy', 'dtype', 'mean', 'reshape', 'sum'):
+            if attr in ('copy', 'dtype', 'mean', 'reshape', 'sum', 'astype'):
                 rval = getattr(tos, attr)
             elif attr == 'shape':
                 rval = tos.shape
@@ -616,19 +667,59 @@ class FrameVM(object):
     def op_LOAD_CONST(self, i, op, arg):
         self.stack.append(self.func.func_code.co_consts[arg])
         tos = self.stack[-1]
+        if type(tos) is float:
+            if id(tos) not in self.watcher.svars:
+                self.watcher.svars[id(tos)] = theano.tensor.as_tensor_variable(tos)
         if (isinstance(tos, np.ndarray)
                 and id(tos) not in self.watcher.svars):
             raise NotImplementedError()
 
+    def op_LOAD_CLOSURE(self, i, op, arg):
+        co_cellvars = self.func.func_code.co_cellvars
+        co_freevars = self.func.func_code.co_freevars
+        co_varnames = self.func.func_code.co_varnames
+        if arg < len(co_cellvars):
+            name = co_cellvars[arg]
+        else:
+            name = co_freevars[arg - len(co_cellvars)]
+        # print 'LOAD_CLOSURE', self.func, name
+        thing = self._locals[co_varnames.index(name)]
+        cell = cellmake(thing)
+        self.stack.append(cell)
+
+
     def op_LOAD_DEREF(self, i, op, arg):
-        # print '???', i, op, arg
-        # print self.func.func_closure
-        thing = self.func.func_closure[arg]
-        # print dir(thing.cell_contents)
-        self.stack.append(thing.cell_contents)
-        tos = self.stack[-1]
-        if (isinstance(tos, np.ndarray)
-                and id(tos) not in self.watcher.svars):
+        # -- this is called to access a variable that appears in multiple
+        #    scopes.
+
+        # -- vars *referenced* by nested scopes
+        co_cellvars = self.func.func_code.co_cellvars
+
+        # -- vars read from enclosing scopes
+        co_freevars = self.func.func_code.co_freevars
+
+        # -- all varnames
+        co_varnames = self.func.func_code.co_varnames
+
+        # print 'LOAD_DEREF', arg, self.func
+        # print ' -> cellvars', co_cellvars
+        # print ' -> freevars', co_freevars
+        # print ' -> varnames', co_varnames
+        if arg < len(co_cellvars):
+            # -- normal case
+            name = co_cellvars[arg]
+            # -- XXX: Is this really the right thing to do??
+            thing = self._locals[co_varnames.index(name)]
+        else:
+            name = co_freevars[arg - len(co_cellvars)]
+            closure = self.func.func_closure
+            assert len(co_freevars) == len(closure)
+            # print 'LOAD_DEREF (%s:%s)' % (self.func, name)
+            cell = closure[arg - len(co_cellvars)]
+            thing = cellget(cell)
+        self.stack.append(thing)
+        if (isinstance(thing, np.ndarray)
+                and id(thing) not in self.watcher.svars):
             self.add_shadow(tos)
 
     def op_LOAD_FAST(self, i, op, arg):
@@ -638,6 +729,30 @@ class FrameVM(object):
         if (isinstance(tos, np.ndarray)
                 and id(tos) not in self.watcher.svars):
             self.add_shadow(tos)
+
+    def op_MAKE_CLOSURE(self, i, op, arg):
+        return self.op_MAKE_FUNCTION(i, op, arg, w_closure=True)
+
+    def op_MAKE_FUNCTION(self, i, op, arg, w_closure=False):
+        func_code = self.stack.pop(-1)
+        if w_closure:
+            cells = self.stack.pop(-1)
+        if arg:
+            argdefs = tuple(self.stack[-arg:])
+            self.stack[-arg:] = []
+        else:
+            argdefs = ()
+        if w_closure:
+            fn = types.FunctionType(func_code,
+                    self.func.func_globals,
+                    argdefs=argdefs,
+                    closure=cells,)
+        else:
+            fn = types.FunctionType(func_code,
+                    self.func.func_globals,
+                    argdefs=argdefs)
+        # print 'made FN', fn, fn.func_closure
+        self.stack.append(fn)
 
     def op_POP_BLOCK(self, i, op, arg):
         #print 'pop block, what to do?'
@@ -768,7 +883,10 @@ class Context(object):
         self.svars.setdefault(id(rval), sval)
         # -- shadow vars have to match dtype and ndim
         if isinstance(rval, np.ndarray):
-            assert str(rval.dtype) == sval.dtype, (rval, sval)
+            if str(rval.dtype) == 'bool':
+                assert sval.dtype == 'int8', (rval.dtype, sval.dtype)
+            else:
+                assert str(rval.dtype) == sval.dtype, (rval, sval)
             assert rval.ndim == sval.ndim, (rval, sval)
         # -- assert postcondition
         assert sval is self.svars[id(rval)]
