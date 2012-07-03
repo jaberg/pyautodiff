@@ -29,7 +29,7 @@ from scipy.optimize.lbfgsb import fmin_l_bfgs_b
 logger.setLevel(logging.INFO)
 
 # from theano.tensor.shared_randomstreams import RandomStreams
-from theano.sandbox.mrg_rng import MRG_RandomStreams as RandomStreams
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 # XXX This will not do - seed must be exposed.
 global_randomstreams = RandomStreams(seed=123)
@@ -506,9 +506,13 @@ class FrameVM(object):
             elif 'method rand of mtrand.RandomState' in str(func):
                 rval = func(*args, **kwargs)
                 assert not kwargs # -- rand doesn't take kwargs right?
+                if list(args) != list(s_args):
+                    raise NotImplementedError()
                 self.watcher.shadow(rval,
                         global_randomstreams.uniform(
-                            low=0, high=1, size=s_args, dtype=rval.dtype))
+                            low=0, high=1,
+                            size=tuple(args),
+                            dtype=str(rval.dtype)))
             else:
                 raise NotImplementedError(func)
         else:
