@@ -2,6 +2,7 @@
 Function minimization drivers based on stochastic gradient descent (SGD).
 
 """
+import sys
 import time
 import numpy as np
 
@@ -40,14 +41,18 @@ class FMinSGD(object):
         s_args = [ctxt.svars[id(w)] for w in args]
         s_cost = ctxt.svars[id(cost)]
 
+        #theano.printing.debugprint(s_cost)
+
         g_args = theano.tensor.grad(s_cost, s_args)
 
         # -- shared var into which we will write stream entries
         updates = [(a, a - stepsize * g) for a, g, in zip(s_args, g_args)]
-        update_fn = theano.function([], [s_cost],
+        update_fn = theano.function([], s_cost,
                 updates=updates,
                 mode=theano_mode,
                 )
+
+        # theano.printing.debugprint(update_fn)
 
         self.s_args = s_args
         self.s_cost = s_cost
@@ -61,21 +66,30 @@ class FMinSGD(object):
     def __iter__(self):
         return self
 
-    def next(self, N=1):
+    def nextN(self, N):
         # XXX: stopping criterion here
         fn = self.update_fn
         setval = self.s_stream0.set_value
         stream_iter_next = self.stream_iter.next
-        while N:
-            # -- write the next element of self.stream into the shared
-            #    variable representing our stochastic input
-            setval(stream_iter_next(), borrow=True)
+        rval = []
+        rval_append = rval.append
+        try:
+            while N:
+                # -- write the next element of self.stream into the shared
+                #    variable representing our stochastic input
+                setval(stream_iter_next(), borrow=True)
 
-            # -- calculate `fn` and perform the arg updates with Theano
-            rval = fn()
-            N -= 1
-        self.ii += N
+                # -- calculate `fn` and perform the arg updates with Theano
+                rval_append(fn())
+                N -= 1
+        except StopIteration:
+            self.ii += len(rval)
+            raise
+        self.ii += len(rval)
         return rval
+
+    def next(self, N=None):
+        return self.nextN(1)[0]
 
     @property
     def current_args(self):
@@ -87,13 +101,13 @@ def fmin_sgd(*args, **kwargs):
     See FMinSGD for documentation. This function creates that object, exhausts
     the iterator, and then returns the final self.current_args values.
     """
+    print_interval = kwargs.pop('print_interval', sys.maxint)
     obj = FMinSGD(*args, **kwargs)
     while True:
         try:
             t = time.time()
-            val = obj.next(100)
-            print time.time() - t
-            # print val
+            vals = obj.nextN(print_interval)
+            print 'Value', np.mean(vals), 'time', (time.time() - t)
         except StopIteration:
             break
     return obj.current_args
