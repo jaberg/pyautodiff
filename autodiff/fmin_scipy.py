@@ -94,7 +94,6 @@ def theano_f_df(fn, args, mode, other_args=(), compile_fn=True):
         return f_df, locals()
 
 
-
 def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
         **scipy_kwargs):
     """
@@ -133,6 +132,5 @@ def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
     rval = args_from_vector(x_opt, args)
     # XXX: one of the scipy_kwargs says to return more/less info,
     #     and that should be reflected here too.
-    return rval #, mincost, info_dct
-
+    return rval
 
