@@ -48,7 +48,12 @@ cellmake.restype = ctypes.py_object
 cellmake.argtypes = (ctypes.py_object,)
 
 
-class Unassigned(object): """Unassigned value"""
+class Unassigned(object):
+    """Unassigned value"""
+
+
+class LoadUnassigned(Exception):
+    """Access to Unassigned value"""
 
 
 class FrameVM(object):
@@ -68,9 +73,26 @@ class FrameVM(object):
         self.print_ops = False
         self.print_stack = False
 
-        # self.varnames = self.fco.co_varnames
-        # self.costr = func.func_code.co_code
-        # self.argnames = self.fco.co_varnames[:self.fco.co_argcount]
+    def push(self, item):
+        if item is Unassigned:
+            raise LoadUnassigned()
+        self.stack.append(item)
+
+    def pop(self):
+        return self.stack.pop(-1)
+
+    def pushN(self, items):
+        for item in items:
+            if item is Unassigned:
+                raise LoadUnassigned()
+        self.stack.extend(items)
+
+    def popN(self, N):
+        rval = self.stack[-N:]
+        self.stack[-N:] = []
+        return rval
+
+
 
     def add_shadow(self, x):
         # -- We cannot safely set up shadow variables that are aliased to
@@ -103,6 +125,10 @@ class FrameVM(object):
         return self.watcher.svars[id(x)]
 
     def call(self, args, kwargs):
+        if type(args) != tuple:
+            raise TypeError('vm.call: args must be tuple', args)
+        if type(kwargs) != dict:
+            raise TypeError('vm.call: kwargs must be dict', kwargs)
 
         func = self.func
         func_code = self.func.func_code
@@ -239,13 +265,13 @@ class FrameVM(object):
         return self.rval
 
     def op_BINARY_ADD(self, i, op, arg):
-        arg2 = self.stack.pop(-1)
-        arg1 = self.stack.pop(-1)
+        arg2 = self.pop()
+        arg1 = self.pop()
         # No Theano vars allowed on the stack
         assert not hasattr(arg1, 'type')
         assert not hasattr(arg2, 'type')
         r = arg1 + arg2
-        self.stack.append(r)
+        self.push(r)
         if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
@@ -257,12 +283,12 @@ class FrameVM(object):
             #print 'added sym'
 
     def op_BINARY_DIVIDE(self, i, op, arg):
-        arg2 = self.stack.pop(-1)
-        arg1 = self.stack.pop(-1)
+        arg2 = self.pop()
+        arg1 = self.pop()
         assert not hasattr(arg1, 'type')
         assert not hasattr(arg2, 'type')
         r = arg1 / arg2
-        self.stack.append(r)
+        self.push(r)
         if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
@@ -273,12 +299,12 @@ class FrameVM(object):
                 self.watcher.shadow(r, s1 / s2)
 
     def op_BINARY_FLOOR_DIVIDE(self, i, op, arg):
-        arg2 = self.stack.pop(-1)
-        arg1 = self.stack.pop(-1)
+        arg2 = self.pop()
+        arg1 = self.pop()
         assert not hasattr(arg1, 'type')
         assert not hasattr(arg2, 'type')
         r = arg1 // arg2
-        self.stack.append(r)
+        self.push(r)
         if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
@@ -289,12 +315,12 @@ class FrameVM(object):
                 self.watcher.shadow(r, s1 // s2)
 
     def op_BINARY_SUBTRACT(self, i, op, arg):
-        arg2 = self.stack.pop(-1)
-        arg1 = self.stack.pop(-1)
+        arg2 = self.pop()
+        arg1 = self.pop()
         assert not hasattr(arg1, 'type')
         assert not hasattr(arg2, 'type')
         r = arg1 - arg2
-        self.stack.append(r)
+        self.push(r)
         if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
@@ -305,10 +331,10 @@ class FrameVM(object):
                 self.watcher.shadow(r, s1 - s2)
 
     def op_BINARY_MULTIPLY(self, i, op, arg):
-        arg2 = self.stack.pop(-1)
-        arg1 = self.stack.pop(-1)
+        arg2 = self.pop()
+        arg1 = self.pop()
         r = arg1 * arg2
-        self.stack.append(r)
+        self.push(r)
         assert not hasattr(arg1, 'type')
         assert not hasattr(arg2, 'type')
         if (id(arg1) in self.watcher.svars
@@ -322,10 +348,10 @@ class FrameVM(object):
             #print 'mul sym', id(r)
 
     def op_BINARY_POWER(self, i, op, arg):
-        arg2 = self.stack.pop(-1)
-        arg1 = self.stack.pop(-1)
+        arg2 = self.pop()
+        arg1 = self.pop()
         r = arg1 ** arg2
-        self.stack.append(r)
+        self.push(r)
         if (id(arg1) in self.watcher.svars
                 or id(arg2) in self.watcher.svars):
             s1 = self.ensure_shadow(arg1)
@@ -335,11 +361,11 @@ class FrameVM(object):
 
     def op_BINARY_SUBSCR(self, i, op, arg):
         # Implements TOS = TOS1[TOS].
-        tos1, tos = self.stack[-2:]
+        tos1, tos = self.popN(2)
         #print 'tos', tos
         #print 'tos1', tos1
         rval = tos1[tos]
-        self.stack[-2:] = [rval]
+        self.push(rval)
         w = self.watcher
         if id(tos) in w.svars or id(tos1) in w.svars:
             if id(tos) in w.svars:
@@ -361,24 +387,23 @@ class FrameVM(object):
             w.shadow(rval, s_rval)
 
     def op_BUILD_MAP(self, i, op, arg):
-        self.stack.append({})
+        self.push({})
 
     def op_BUILD_SLICE(self, i, op, arg):
         if arg == 2:
-            tos1, tos = self.stack[-2:]
-            self.stack[-2:] = [slice(tos1, tos)]
+            tos1, tos = self.popN(2)
+            self.push(slice(tos1, tos))
         elif arg == 3:
-            tos2, tos1, tos = self.stack[-3:]
-            self.stack[-3:] = [slice(tos2, tos1, tos)]
+            tos2, tos1, tos = self.popN(3)
+            self.push(slice(tos2, tos1, tos))
         else:
             raise NotImplementedError()
 
     def op_BUILD_TUPLE(self, i, op, arg):
         if arg:
-            t = tuple(self.stack[-arg:])
-            self.stack[-arg:] = [t]
+            self.push(tuple(self.popN(arg)))
         else:
-            self.stack.append(())
+            self.push(())
 
     def op_CALL_FUNCTION(self, i, op, arg, call_vargs=None, call_kwargs=None):
         if call_vargs is None:
@@ -396,11 +421,12 @@ class FrameVM(object):
         kwargs = dict([(self.stack[-2 * ii], self.stack[-2 * ii + 1])
                 for ii in range(n_kwargs, 0, -1)])
         args = [self.stack[-ii - 2 * n_kwargs] for ii in range(n_args, 0, -1)]
+        assert all(Unassigned is not ai for ai in args)
         # -- pop all args off the stack
         if arg:
             self.stack = self.stack[:- n_args - 2 * n_kwargs]
         # -- pop the function itself off the stack
-        func = self.stack.pop(-1)
+        func = self.pop()
 
         args = args + list(call_vargs)
         orig_kwargs_size = len(kwargs)
@@ -436,11 +462,14 @@ class FrameVM(object):
                 if kwargs:
                     # TODO put kwargs into the watcher calls
                     raise NotImplementedError()
-                if 0: pass
-                elif func.__name__ == 'abs':
+                if func.__name__ == 'abs':
                     self.watcher.shadow(rval, abs(*s_args))
                 elif func.__name__ == 'any':
                     print 'WARNING: ignoring dependency through np.any'
+                    # XXX This could be implementable with something like
+                    # sum(tensor.neq(x, 0))
+                    # but any might take more arguments, check docs and write
+                    # tests.
                 elif func.__name__ == 'dot':
                     self.watcher.shadow(rval, theano.tensor.dot(*s_args))
                 elif func.__name__ == 'exp':
@@ -461,6 +490,8 @@ class FrameVM(object):
                     self.watcher.shadow(rval, theano.tensor.mean(*s_args))
                 elif func.__name__ == 'sum':
                     self.watcher.shadow(rval, theano.tensor.sum(*s_args))
+                elif func.__name__ == 'tanh':
+                    self.watcher.shadow(rval, theano.tensor.tanh(*s_args))
                 elif func.__name__ == 'zeros_like':
                     self.watcher.shadow(rval, theano.tensor.zeros_like(*s_args))
                 else:
@@ -499,7 +530,7 @@ class FrameVM(object):
             # -- built-in ndarray methods should be caught above, not here.
             if func.__name__ in ('setdefault',):
                 rval = func(*args, **kwargs)
-            elif func.__name__ in ('range',):
+            elif func.__name__ in ('enumerate', 'range', 'xrange', 'zip'):
                 rval = func(*args, **kwargs)
                 if any(id(a) in self.watcher.svars for a in all_args):
                     raise NotImplementedError()
@@ -518,23 +549,24 @@ class FrameVM(object):
         else:
             logger.debug('stepping into %s' % str(func))
             vm = FrameVM(self.watcher, func)
-            rval = vm.call(args, kwargs)
-        self.stack.append(rval)
+            rval = vm.call(tuple(args), kwargs)
+        self.push(rval)
 
     def op_CALL_FUNCTION_VAR(self, i, op, arg):
-        call_vargs = self.stack.pop(-1)
+        call_vargs = self.pop()
         return self.op_CALL_FUNCTION(i, op, arg, call_vargs=call_vargs)
 
     def op_COMPARE_OP(self, i, op, arg):
         opname = opcode.cmp_op[arg]
-        right = self.stack.pop(-1)
-        left = self.stack.pop(-1)
+        right = self.pop()
+        left = self.pop()
         if 0: pass
-        elif opname == '==': self.stack.append(left == right)
-        elif opname == '!=': self.stack.append(left != right)
-        elif opname == '>': self.stack.append(left > right)
-        elif opname == '<': self.stack.append(left < right)
-        elif opname == 'is': self.stack.append(left is right)
+        elif opname == '==': self.push(left == right)
+        elif opname == '!=': self.push(left != right)
+        elif opname == '>': self.push(left > right)
+        elif opname == '<': self.push(left < right)
+        elif opname == 'is': self.push(left is right)
+        elif opname == 'in': self.push(left in right)
         else:
             raise NotImplementedError('comparison: %s' % opname)
 
@@ -546,7 +578,8 @@ class FrameVM(object):
             elif opname == '>':
                 self.watcher.shadow(tos, theano.tensor.gt(*sargs))
             else:
-                raise NotImplementedError()
+                raise NotImplementedError('Comparison on watched args',
+                        opname)
 
     def op_DUP_TOPX(self, i, op, arg):
         assert arg > 0
@@ -559,18 +592,18 @@ class FrameVM(object):
         try:
             next = tos.next()
             # print 'next', next
-            self.stack.append(next)
+            self.push(next)
         except StopIteration:
-            self.stack.pop(-1)
+            self.pop()
             return ('rel', arg)
 
     def op_INPLACE_ADD(self, i, op, arg):
-        tos = self.stack.pop(-1)
-        tos1 = self.stack.pop(-1)
+        tos = self.pop()
+        tos1 = self.pop()
 
         r = tos1
         r += tos
-        self.stack.append(r)
+        self.push(r)
         if (id(tos) in self.watcher.svars
                 or id(tos1) in self.watcher.svars):
             s_tos = self.ensure_shadow(tos)
@@ -578,12 +611,12 @@ class FrameVM(object):
             self.watcher.shadow(r, s_tos + s_tos1)
 
     def op_INPLACE_MULTIPLY(self, i, op, arg):
-        tos = self.stack.pop(-1)
-        tos1 = self.stack.pop(-1)
+        tos = self.pop()
+        tos1 = self.pop()
 
         r = tos1
         r *= tos
-        self.stack.append(r)
+        self.push(r)
         if (id(tos) in self.watcher.svars
                 or id(tos1) in self.watcher.svars):
             s_tos = self.ensure_shadow(tos)
@@ -591,12 +624,12 @@ class FrameVM(object):
             self.watcher.shadow(r, s_tos * s_tos1)
 
     def op_INPLACE_SUBTRACT(self, i, op, arg):
-        tos = self.stack.pop(-1)
-        tos1 = self.stack.pop(-1)
+        tos = self.pop()
+        tos1 = self.pop()
 
         r = tos1
         r -= tos
-        self.stack.append(r)
+        self.push(r)
         if (id(tos) in self.watcher.svars
                 or id(tos1) in self.watcher.svars):
             s_tos = self.ensure_shadow(tos)
@@ -606,6 +639,9 @@ class FrameVM(object):
     def op_JUMP_ABSOLUTE(self, i, op, arg):
         # print 'sending', arg
         return ('abs', arg)
+
+    def op_JUMP_FORWARD(self, i, op, arg):
+        return ('rel', arg)
 
     def op_JUMP_IF_TRUE(self, i, op, arg):
         tos = self.stack[-1]
@@ -622,7 +658,7 @@ class FrameVM(object):
     def op_LOAD_GLOBAL(self, i, op, arg):
         # print 'LOAD_GLOBAL', self.names[arg]
         tos = self._myglobals[self.func.func_code.co_names[arg]]
-        self.stack.append(tos)
+        self.push(tos)
         if (isinstance(tos, np.ndarray)
                 and id(tos) not in self.watcher.svars):
             self.add_shadow(self.stack[-1])
@@ -636,7 +672,7 @@ class FrameVM(object):
         #
         # *EXCEPT* if attr is a property, then it actually represents a
         # function call
-        tos = self.stack.pop(-1)
+        tos = self.pop()
 
         if isinstance(tos, np.ndarray):
             if id(tos) not in self.watcher.svars:
@@ -659,18 +695,18 @@ class FrameVM(object):
                 self.watcher.shadow(rval, s_tos.T)
             else:
                 raise NotImplementedError('ndarray attribute %s' % attr)
-            self.stack.append(rval)
+            self.push(rval)
         else:
             logger.debug('attribute access %s' % attr)
             rval = getattr(tos, attr)
-            self.stack.append(rval)
+            self.push(rval)
             if (isinstance(rval, np.ndarray)
                     and id(rval) not in self.watcher.svars):
                 self.add_shadow(rval)
 
     def op_LOAD_CONST(self, i, op, arg):
-        self.stack.append(self.func.func_code.co_consts[arg])
-        tos = self.stack[-1]
+        tos = self.func.func_code.co_consts[arg]
+        self.push(tos)
         if type(tos) is float:
             if id(tos) not in self.watcher.svars:
                 self.watcher.svars[id(tos)] = theano.tensor.as_tensor_variable(tos)
@@ -689,8 +725,7 @@ class FrameVM(object):
         # print 'LOAD_CLOSURE', self.func, name
         thing = self._locals[co_varnames.index(name)]
         cell = cellmake(thing)
-        self.stack.append(cell)
-
+        self.push(cell)
 
     def op_LOAD_DEREF(self, i, op, arg):
         # -- this is called to access a variable that appears in multiple
@@ -721,15 +756,17 @@ class FrameVM(object):
             # print 'LOAD_DEREF (%s:%s)' % (self.func, name)
             cell = closure[arg - len(co_cellvars)]
             thing = cellget(cell)
-        self.stack.append(thing)
+        self.push(thing)
         if (isinstance(thing, np.ndarray)
                 and id(thing) not in self.watcher.svars):
-            self.add_shadow(tos)
+            self.add_shadow(thing)
 
     def op_LOAD_FAST(self, i, op, arg):
-        #print 'LOAD_FAST', self.func.func_code.co_varnames[arg], self._locals[arg]
         tos = self._locals[arg]
-        self.stack.append(tos)
+        try:
+            self.push(tos)
+        except LoadUnassigned:
+            raise LoadUnassigned(self.func.func_code.co_varnames[arg])
         if (isinstance(tos, np.ndarray)
                 and id(tos) not in self.watcher.svars):
             self.add_shadow(tos)
@@ -738,9 +775,9 @@ class FrameVM(object):
         return self.op_MAKE_FUNCTION(i, op, arg, w_closure=True)
 
     def op_MAKE_FUNCTION(self, i, op, arg, w_closure=False):
-        func_code = self.stack.pop(-1)
+        func_code = self.pop()
         if w_closure:
-            cells = self.stack.pop(-1)
+            cells = self.pop()
         if arg:
             argdefs = tuple(self.stack[-arg:])
             self.stack[-arg:] = []
@@ -756,7 +793,7 @@ class FrameVM(object):
                     self.func.func_globals,
                     argdefs=argdefs)
         # print 'made FN', fn, fn.func_closure
-        self.stack.append(fn)
+        self.push(fn)
 
     def op_POP_BLOCK(self, i, op, arg):
         #print 'pop block, what to do?'
@@ -764,21 +801,21 @@ class FrameVM(object):
 
     def op_POP_JUMP_IF_FALSE(self, i, op, arg):
         #tos = self.stack[-1]
-        tos = self.stack.pop(-1)
+        tos = self.pop()
         if not tos:
             return ('abs', arg)
 
     def op_POP_JUMP_IF_TRUE(self, i, op, arg):
         #tos = self.stack[-1]
-        tos = self.stack.pop(-1)
+        tos = self.pop()
         if tos:
             return ('abs', arg)
 
     def op_POP_TOP(self, i, op, arg):
-        self.stack.pop(-1)
+        self.pop()
 
     def op_PRINT_ITEM(self, i, op, arg):
-        thing = self.stack.pop(-1)
+        thing = self.pop()
         if str(thing) == 'PRINT_OPS:True':
             self.print_ops = True
         if str(thing) == 'PRINT_STACK:True':
@@ -809,19 +846,19 @@ class FrameVM(object):
 
     def op_STORE_FAST(self, i, op, arg):
         #print 'STORE_FAST', self.varnames[arg], self.stack[-1]
-        self._locals[arg] = self.stack.pop(-1)
+        self._locals[arg] = self.pop()
 
     def op_STORE_MAP(self, i, op, arg):
-        key = self.stack.pop(-1)
-        val = self.stack.pop(-1)
+        key = self.pop()
+        val = self.pop()
         dct = self.stack[-1]
         dct[key] = val
 
     def op_STORE_SUBSCR(self, i, op, arg):
         # Implements TOS1[TOS] = TOS2.
-        tos = self.stack.pop(-1)
-        tos1 = self.stack.pop(-1)
-        tos2 = self.stack.pop(-1)
+        tos = self.pop()
+        tos1 = self.pop()
+        tos2 = self.pop()
 
         tos1[tos] = tos2
 
@@ -838,15 +875,15 @@ class FrameVM(object):
 
     def op_RAISE_VARARGS(self, i, op, arg):
         if 1 <= arg:
-            exc = self.stack.pop(-1)
+            exc = self.pop()
         if 2 <= arg:
-            param = self.stack.pop(-1)
+            param = self.pop()
         if 3 <= arg:
-            tb = self.stack.pop(-1)
+            tb = self.pop()
         raise NotImplementedError('exception handling')
 
     def op_RETURN_VALUE(self, i, op, arg):
-        self.rval = self.stack.pop(-1)
+        self.rval = self.pop()
 
     def op_ROT_TWO(self, i, op, arg):
         a = self.stack[-1]
@@ -863,16 +900,16 @@ class FrameVM(object):
         self.stack[-3] = a
 
     def op_UNARY_NEGATIVE(self, i, op, arg):
-        arg1 = self.stack.pop(-1)
+        arg1 = self.pop()
         assert not hasattr(arg1, 'type')
         r = -arg1
-        self.stack.append(r)
+        self.push(r)
         if id(arg1) in self.watcher.svars:
             s1 = self.ensure_shadow(arg1)
             self.watcher.shadow(r,  -s1)
 
     def op_UNPACK_SEQUENCE(self, i, op, arg):
-        tos = self.stack.pop(-1)
+        tos = self.pop()
         self.stack.extend(tos[::-1])
 
 

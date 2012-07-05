@@ -9,6 +9,7 @@ import scipy.optimize.lbfgsb
 import theano
 
 from .context import Context
+from .utils import flat_from_doc, doc_from_flat
 
 
 def vector_from_args(args):
@@ -40,18 +41,19 @@ def theano_f_df(fn, args, mode, other_args=(), compile_fn=True):
 
     # hacky way to get call graph (we could do it without actually running it)
     ctxt = Context()
-    cost = ctxt.call(fn, tuple(args) + tuple(other_args))
+    cost = ctxt.call(fn, args + tuple(other_args))
 
     # construct bytecode for f_df() that
     # * unpacks x-> args
     # * computes f, dx
-    orig_s_args = [ctxt.svars[id(w)] for w in args]
-    args_shapes = [w.shape for w in args]
-    x = vector_from_args(args)
+    flat_args = flat_from_doc(args)
+    orig_s_args = [ctxt.svars[id(w)] for w in flat_args]
+    args_shapes = [w.shape for w in flat_args]
+    x = vector_from_args(flat_args)
     s_x = theano.tensor.vector(dtype=x.dtype)
     s_args = []
     i = 0
-    for s_w, w in zip(orig_s_args, args):
+    for s_w, w in zip(orig_s_args, flat_args):
         if w.shape:
             s_xi = s_x[i: i + w.size].reshape(w.shape)
         else:
@@ -111,10 +113,13 @@ def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
     **scipy_kwargs: pass these through to scipy's fmin_l_bfgs_b routine
 
     """
+    if type(args) != tuple:
+        raise TypeError('autodiff.fmin_l_bfgs_b: args must be tuple', args)
 
     f_df, lvars  = theano_f_df(fn, args, mode=theano_mode)
 
-    x = vector_from_args(args)
+    flat_args = flat_from_doc(args)
+    x = vector_from_args(flat_args)
 
     if scalar_bounds is not None:
         lb, ub = scalar_bounds
@@ -129,8 +134,10 @@ def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
     x_opt, mincost, info_dct = scipy.optimize.lbfgsb.fmin_l_bfgs_b(
             f_df, x, **scipy_kwargs)
 
-    rval = args_from_vector(x_opt, args)
+    reshaped = args_from_vector(x_opt, flat_args)
+    reshaped_as_doc, pos = doc_from_flat(args, reshaped, 0)
+    assert pos == len(reshaped)
     # XXX: one of the scipy_kwargs says to return more/less info,
     #     and that should be reflected here too.
-    return rval
+    return reshaped_as_doc
 

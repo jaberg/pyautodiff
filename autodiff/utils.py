@@ -27,3 +27,56 @@ def itercode(code):
             assert abs_rel == 'abs' or abs_rel == 'rel'
             i = dst if abs_rel == 'abs' else i + dst
 
+
+def flat_from_doc(doc):
+    """Iterate over the elements of a nested document in a consistent order,
+    unpacking dictionaries, lists, and tuples.
+
+    Returns a list.
+    """
+    rval = []
+    if type(doc) in (list, tuple):
+        for d_i in doc:
+            rval.extend(flat_from_doc(d_i))
+    elif type(doc) == dict:
+        for k, v in doc.items():
+            if not isinstance(k, basestring):
+                # -- if keys are tuples containing ndarrays, should
+                #    they be traversed also?  What about number keys
+                #    where to draw line?
+                raise NotImplementedError(
+                        'potential ambiguity in non-string keys',
+                        k)
+            rval.extend(flat_from_doc(v))
+    else:
+        rval.append(doc)
+    return rval
+
+
+def doc_from_flat(doc, flat, pos):
+    """Iterate over a nested document, building a clone from the elements of
+    flat
+
+    Returns object with same type as doc, and the position of the next unused
+    element in flat.
+    """
+    if type(doc) in (list, tuple):
+        rval = []
+        for d_i in doc:
+            d_i_clone, pos = doc_from_flat(d_i, flat, pos)
+            rval.append(d_i_clone)
+        rval = type(doc)(rval)
+
+    elif type(doc) == dict:
+        rval = {}
+        for k, v in doc.items():
+            v_clone, pos = doc_from_flat(v, flat, pos)
+            rval[k] = v_clone
+
+    else:
+        rval = flat[pos]
+        pos += 1
+
+    return rval, pos
+
+

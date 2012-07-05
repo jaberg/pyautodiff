@@ -9,6 +9,8 @@ import numpy as np
 import theano
 
 from .context import Context
+from .utils import flat_from_doc, doc_from_flat
+
 
 class FMinSGD(object):
     """
@@ -53,7 +55,9 @@ class FMinSGD(object):
         # -- pass params as args, streams as kwawrgs
         cost = ctxt.call(fn, args, streams0)
 
-        s_args = [ctxt.svars[id(w)] for w in args]
+        flat_args = flat_from_doc(args)
+
+        s_args = [ctxt.svars[id(w)] for w in flat_args]
         s_cost = ctxt.svars[id(cost)]
 
         #theano.printing.debugprint(s_cost)
@@ -69,6 +73,7 @@ class FMinSGD(object):
 
         # theano.printing.debugprint(update_fn)
 
+        self.args = args
         self.loops = loops
         self.streams = streams
         self.s_args = s_args
@@ -123,7 +128,10 @@ class FMinSGD(object):
 
     @property
     def current_args(self):
-        return [a.get_value() for a in self.s_args]
+        vals = [a.get_value() for a in self.s_args]
+        rval, pos = doc_from_flat(self.args, vals, 0)
+        assert pos == len(vals)
+        return rval
 
 
 def fmin_sgd(*args, **kwargs):
@@ -141,5 +149,4 @@ def fmin_sgd(*args, **kwargs):
         else:
             break
     return obj.current_args
-
 
