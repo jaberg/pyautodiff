@@ -62,10 +62,11 @@ class FMinSGD(object):
 
         #theano.printing.debugprint(s_cost)
 
-        g_args = theano.tensor.grad(s_cost, s_args)
+        g_args = theano.tensor.grad(s_cost, s_args, warn_type=True)
 
         # -- shared var into which we will write stream entries
-        updates = [(a, a - stepsize * g) for a, g, in zip(s_args, g_args)]
+        updates = [(a, a - theano.tensor.cast(stepsize, a.dtype) * g)
+                for a, g, in zip(s_args, g_args)]
         update_fn = theano.function([], s_cost,
                 updates=updates,
                 mode=theano_mode,
