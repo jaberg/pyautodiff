@@ -691,7 +691,9 @@ class FrameVM(object):
                 rval = getattr(tos, attr)
             elif attr == 'shape':
                 rval = tos.shape
-                self.watcher.shadow(rval, s_tos.shape)
+                # XXX: NOT TRACKING SHAPE CHANGES BECAUSE
+                #      BAD INTERACTION WITH fbncc.__theano_op__
+                # self.watcher.shadow(rval, s_tos.shape)
             elif attr == 'T':
                 rval = tos.T
                 self.watcher.shadow(rval, s_tos.T)
