@@ -833,6 +833,30 @@ class FrameVM(object):
         #print 'SETUP_LOOP, what to do?'
         pass
 
+    def op_SLICE_PLUS_1(self, i, op, arg):
+        # TOS = TOS1[TOS:]
+        TOS1, TOS = self.popN(2)
+        new_tos = TOS1[TOS:]
+        self.push(new_tos)
+        watcher = self.watcher
+        if any(id(t) in watcher.svars for t in [TOS, TOS1]):
+            s  = w.get(TOS)
+            s1 = w.get(TOS1)
+            s_rval = s2[s1:]
+            self.watcher.shadow(new_tos, s_rval)
+
+    def op_SLICE_PLUS_2(self, i, op, arg):
+        # TOS = TOS1[:TOS]
+        TOS1, TOS = self.popN(2)
+        new_tos = TOS1[:TOS]
+        self.push(new_tos)
+        watcher = self.watcher
+        if any(id(t) in watcher.svars for t in [TOS, TOS1]):
+            s  = w.get(TOS)
+            s1 = w.get(TOS1)
+            s_rval = s2[:s1]
+            self.watcher.shadow(new_tos, s_rval)
+
     def op_SLICE_PLUS_3(self, i, op, arg):
         # Implements TOS = TOS2[TOS1:TOS]
         TOS2, TOS1, TOS = self.stack[-3:]
