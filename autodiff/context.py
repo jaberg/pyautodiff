@@ -488,6 +488,8 @@ class FrameVM(object):
                     self.watcher.shadow(rval, s_rval)
                 elif func.__name__ == 'mean':
                     self.watcher.shadow(rval, theano.tensor.mean(*s_args))
+                elif func.__name__ == 'reshape':
+                    self.watcher.shadow(rval, theano.tensor.reshape(*s_args))
                 elif func.__name__ == 'sum':
                     self.watcher.shadow(rval, theano.tensor.sum(*s_args))
                 elif func.__name__ == 'tanh':
