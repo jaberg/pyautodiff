@@ -574,6 +574,8 @@ class FrameVM(object):
         elif opname == '!=': self.push(left != right)
         elif opname == '>': self.push(left > right)
         elif opname == '<': self.push(left < right)
+        elif opname == '>=': self.push(left >= right)
+        elif opname == '<=': self.push(left <= right)
         elif opname == 'is': self.push(left is right)
         elif opname == 'in': self.push(left in right)
         else:
@@ -582,10 +584,21 @@ class FrameVM(object):
         if any(id(a) in self.watcher.svars for a in [left, right]):
             sargs = [self.watcher.svars.get(id(a), a) for a in [left, right]]
             tos = self.stack[-1]
-            if   opname == '<':
+            if 0: pass
+            elif opname == '==':
+                self.watcher.shadow(tos, theano.tensor.eq(*sargs))
+            elif opname == '!=':
+                self.watcher.shadow(tos, theano.tensor.neq(*sargs))
+            elif opname == '<':
                 self.watcher.shadow(tos, theano.tensor.lt(*sargs))
             elif opname == '>':
                 self.watcher.shadow(tos, theano.tensor.gt(*sargs))
+            elif opname == '<=':
+                self.watcher.shadow(tos, theano.tensor.le(*sargs))
+            elif opname == '>=':
+                self.watcher.shadow(tos, theano.tensor.ge(*sargs))
+            elif opname == 'is':
+                pass
             else:
                 raise NotImplementedError('Comparison on watched args',
                         opname)
