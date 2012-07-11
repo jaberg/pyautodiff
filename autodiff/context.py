@@ -630,7 +630,20 @@ class FrameVM(object):
                 or id(tos1) in self.watcher.svars):
             s_tos = self.ensure_shadow(tos)
             s_tos1 = self.ensure_shadow(tos1)
-            self.watcher.shadow(r, s_tos + s_tos1)
+            self.watcher.shadow(r, s_tos + s_tos1, force=True)
+
+    def op_INPLACE_DIVIDE(self, i, op, arg):
+        tos = self.pop()
+        tos1 = self.pop()
+
+        r = tos1
+        r /= tos
+        self.push(r)
+        if (id(tos) in self.watcher.svars
+                or id(tos1) in self.watcher.svars):
+            s_tos = self.ensure_shadow(tos)
+            s_tos1 = self.ensure_shadow(tos1)
+            self.watcher.shadow(r, s_tos1 / s_tos, force=True)
 
     def op_INPLACE_MULTIPLY(self, i, op, arg):
         tos = self.pop()
@@ -643,11 +656,10 @@ class FrameVM(object):
                 or id(tos1) in self.watcher.svars):
             s_tos = self.ensure_shadow(tos)
             s_tos1 = self.ensure_shadow(tos1)
-            self.watcher.shadow(r, s_tos * s_tos1)
+            self.watcher.shadow(r, s_tos * s_tos1, force=True)
 
     def op_INPLACE_SUBTRACT(self, i, op, arg):
-        tos = self.pop()
-        tos1 = self.pop()
+        tos1, tos = self.popN(2)
 
         r = tos1
         r -= tos
@@ -656,7 +668,7 @@ class FrameVM(object):
                 or id(tos1) in self.watcher.svars):
             s_tos = self.ensure_shadow(tos)
             s_tos1 = self.ensure_shadow(tos1)
-            self.watcher.shadow(r, s_tos - s_tos1)
+            self.watcher.shadow(r, s_tos1 - s_tos, force=True)
 
     def op_JUMP_ABSOLUTE(self, i, op, arg):
         # print 'sending', arg
@@ -967,9 +979,12 @@ class Context(object):
         self.nogc = [] # ids that must not be reused
         # XXX: rethink to avoid actually holding on to all these intermediates.
 
-    def shadow(self, rval, sval):
+    def shadow(self, rval, sval, force=True):
         assert hasattr(sval, 'type')  # assert sval is Theano variable
-        self.svars.setdefault(id(rval), sval)
+        if force:
+            self.svars[id(rval)] = sval
+        else:
+            self.svars.setdefault(id(rval), sval)
         # -- shadow vars have to match dtype and ndim
         if isinstance(rval, np.ndarray):
             if str(rval.dtype) == 'bool':
