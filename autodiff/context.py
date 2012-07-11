@@ -459,9 +459,6 @@ class FrameVM(object):
             rval = func(*args, **kwargs)
             all_args = args + kwargs.values()
             if any(id(a) in self.watcher.svars for a in all_args):
-                if kwargs:
-                    # TODO put kwargs into the watcher calls
-                    raise NotImplementedError()
                 if func.__name__ == 'abs':
                     self.watcher.shadow(rval, abs(*s_args))
                 elif func.__name__ == 'any':
@@ -487,15 +484,19 @@ class FrameVM(object):
                     assert s_rval.ndim == 0  # builtin max can't make vector
                     self.watcher.shadow(rval, s_rval)
                 elif func.__name__ == 'mean':
-                    self.watcher.shadow(rval, theano.tensor.mean(*s_args))
+                    self.watcher.shadow(rval, theano.tensor.mean(*s_args,
+                        **s_kwargs))
                 elif func.__name__ == 'reshape':
-                    self.watcher.shadow(rval, theano.tensor.reshape(*s_args))
+                    self.watcher.shadow(rval, theano.tensor.reshape(*s_args,
+                        **s_kwargs))
                 elif func.__name__ == 'sum':
-                    self.watcher.shadow(rval, theano.tensor.sum(*s_args))
+                    self.watcher.shadow(rval, theano.tensor.sum(*s_args,
+                        **s_kwargs))
                 elif func.__name__ == 'tanh':
                     self.watcher.shadow(rval, theano.tensor.tanh(*s_args))
                 elif func.__name__ == 'zeros_like':
-                    self.watcher.shadow(rval, theano.tensor.zeros_like(*s_args))
+                    self.watcher.shadow(rval,
+                            theano.tensor.zeros_like(*s_args, **s_kwargs))
                 else:
                     raise NotImplementedError(func)
             else:
@@ -512,9 +513,15 @@ class FrameVM(object):
                 assert not kwargs
                 rval = func()
                 self.watcher.shadow(rval, s_self.copy())
+            elif func.__name__ == 'max':
+                rval = func(*args, **kwargs)
+                self.watcher.shadow(rval, s_self.max(*s_args, **s_kwargs))
             elif func.__name__ == 'mean':
                 rval = func(*args, **kwargs)
                 self.watcher.shadow(rval, s_self.mean(*s_args, **s_kwargs))
+            elif func.__name__ == 'min':
+                rval = func(*args, **kwargs)
+                self.watcher.shadow(rval, s_self.min(*s_args, **s_kwargs))
             elif func.__name__ == 'reshape':
                 rval = func(*args, **kwargs)
                 self.watcher.shadow(rval, s_self.reshape(*s_args, **s_kwargs))
@@ -527,7 +534,7 @@ class FrameVM(object):
                 assert list(args) == s_args
                 self.watcher.shadow(rval, s_self.astype(str(args[0])))
             else:
-                raise NotImplementedError()
+                raise NotImplementedError(func)
         elif 'built-in' in str(func):
             # -- built-in ndarray methods should be caught above, not here.
             if func.__name__ in ('setdefault',):
