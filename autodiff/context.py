@@ -719,7 +719,7 @@ class FrameVM(object):
             # hard-code of how to deal with every ndarray property :/
             # XXX: think of how not to list all of the methods twice (!) as in
             # both here and in the CALL_FUNCTION handler
-            if attr in ('copy', 'dtype', 'mean', 'reshape', 'sum', 'astype'):
+            if attr in ('astype', 'copy', 'dtype', 'min', 'mean', 'max', 'reshape', 'sum'):
                 rval = getattr(tos, attr)
             elif attr == 'shape':
                 rval = tos.shape
