@@ -1,2 +1,2 @@
 numpy
-git+https://github.com/Theano/Theano.git
+theano
