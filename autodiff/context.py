@@ -492,6 +492,8 @@ class FrameVM(object):
                 elif func.__name__ == 'sum':
                     self.watcher.shadow(rval, theano.tensor.sum(*s_args,
                         **s_kwargs))
+                elif func.__name__ == 'sqrt':
+                    self.watcher.shadow(rval, theano.tensor.sqrt(*s_args))
                 elif func.__name__ == 'tanh':
                     self.watcher.shadow(rval, theano.tensor.tanh(*s_args))
                 elif func.__name__ == 'zeros_like':
