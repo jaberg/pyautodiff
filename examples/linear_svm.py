@@ -27,7 +27,7 @@ def loss_fn(weights, bias):
     return loss
 
 # -- Run loss_fn once to trace computations.
-w, b = fmin_l_bfgs_b(loss_fn, [np.zeros(5), np.zeros(())])
+w, b = fmin_l_bfgs_b(loss_fn, (np.zeros(5), np.zeros(())))
 
 # -- run loss_fn as usual
 final_loss = loss_fn(w, b)

@@ -4,8 +4,8 @@ PyAutoDiff
 Automatic differentiation for NumPy (very new, experimental, unreliable, etc... but *promising*)
 
     import autodiff, numpy as np
-    print autodiff.fmin_l_bfgs_b(lambda x: (x + 1) ** 2, [np.zeros(())])
-    # -> [array(-1.0)]
+    print autodiff.fmin_l_bfgs_b(lambda x: (x + 1) ** 2, (np.zeros(()),))
+    # -> (array(-1.0),)
 
 Dependencies:
   * numpy
