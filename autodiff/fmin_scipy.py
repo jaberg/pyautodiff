@@ -4,6 +4,8 @@ Scipy-based function minimization drivers
 """
 
 import time
+import gc
+
 import numpy as np
 import scipy.optimize.lbfgsb
 import theano
@@ -33,14 +35,14 @@ def args_from_vector(x, orig_args):
     return rval
 
 
-def theano_f_df(fn, args, mode, other_args=(), compile_fn=True):
+def theano_f_df(fn, args, mode, device, other_args=(), compile_fn=True):
     """
     Compute gradient wrt args, but not other_args
     """
     # -- inspect bytecode of fn to determine derivative wrt args
 
     # hacky way to get call graph (we could do it without actually running it)
-    ctxt = Context()
+    ctxt = Context(device)
     cost = ctxt.call(fn, args + tuple(other_args))
 
     # construct bytecode for f_df() that
@@ -96,7 +98,10 @@ def theano_f_df(fn, args, mode, other_args=(), compile_fn=True):
         return f_df, locals()
 
 
-def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
+def fmin_l_bfgs_b(fn, args,
+        scalar_bounds=None,
+        theano_mode=None,
+        theano_device=None,
         **scipy_kwargs):
     """
     Return values that minimize Python function `fn(*args)`, by automatically
@@ -116,7 +121,8 @@ def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
     if type(args) != tuple:
         raise TypeError('autodiff.fmin_l_bfgs_b: args must be tuple', args)
 
-    f_df, lvars  = theano_f_df(fn, args, mode=theano_mode)
+    f_df, lvars  = theano_f_df(fn, args, mode=theano_mode,
+            device=theano_device)
 
     flat_args = flat_from_doc(args)
     x = vector_from_args(flat_args)
@@ -139,5 +145,6 @@ def fmin_l_bfgs_b(fn, args, theano_mode=None, scalar_bounds=None,
     assert pos == len(reshaped)
     # XXX: one of the scipy_kwargs says to return more/less info,
     #     and that should be reflected here too.
+    gc.collect()
     return reshaped_as_doc
 
