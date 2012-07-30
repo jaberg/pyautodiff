@@ -1,3 +1,13 @@
+"""
+Linear SVM
+==========
+
+This script fits a linear support vector machine classifier to random data.  It
+illustrates how a function defined purely by numpy operations can be minimized
+directly with a gradient-based solver.
+
+"""
+
 import numpy as np
 from autodiff import fmin_l_bfgs_b
 
@@ -21,7 +31,7 @@ def test_svm():
         print 'ran loss_fn(), returning', loss
         return loss
 
-    w, b = fmin_l_bfgs_b(loss_fn, [np.zeros(5), np.zeros(())])
+    w, b = fmin_l_bfgs_b(loss_fn, (np.zeros(5), np.zeros(())))
     final_loss = loss_fn(w, b)
     assert np.allclose(final_loss, 0.7229)
 
