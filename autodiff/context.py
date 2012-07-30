@@ -537,6 +537,18 @@ class FrameVM(object):
                 self.watcher.shadow(rval, s_self.astype(str(args[0])))
             else:
                 raise NotImplementedError(func)
+        elif isinstance(getattr(func, '__self__', None), np.number):
+            assert id(func.__self__) in self.watcher.svars
+            s_self = self.watcher.svars[id(func.__self__)]
+            if 0:
+                pass
+            elif func.__name__ == 'astype':
+                rval = func(*args, **kwargs)
+                assert not kwargs
+                assert list(args) == s_args
+                self.watcher.shadow(rval, s_self.astype(str(args[0])))
+            else:
+                raise NotImplementedError(func)
         elif 'built-in' in str(func):
             # -- built-in ndarray methods should be caught above, not here.
             if func.__name__ in ('setdefault',):
