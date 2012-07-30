@@ -8,11 +8,13 @@ Automatic differentiation for NumPy (very new, experimental, unreliable, etc... 
     # -> (array(-1.0),)
 
 Other examples include:
-  * [Linear SVM done quick](https://github.com/jaberg/pyautodiff/blob/master/autodiff/tests/test_svm.py)
+  * Linear SVM done quick
+    (https://github.com/jaberg/pyautodiff/blob/master/autodiff/tests/test_svm.py)
 
 Dependencies:
   * numpy
-  * Theano [git master](https://github.com/Theano/Theano.git) (*currently no official release will work*)
+  * Theano git master (*currently no official release will work*)
+    (https://github.com/Theano/Theano.git)
 
 Installation:
 
@@ -21,4 +23,4 @@ Installation:
 
 
 Thanks:
-  * Travis Oliphant for posting a very early version of [numba](https://github.com/numba/numba) which provided the inspiration and starting point for this project.
+  * Travis Oliphant for posting a very early version of numba (https://github.com/numba/numba) which provided the inspiration and starting point for this project.
