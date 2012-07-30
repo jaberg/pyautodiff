@@ -92,8 +92,6 @@ class FrameVM(object):
         self.stack[-N:] = []
         return rval
 
-
-
     def add_shadow(self, x):
         # -- We cannot safely set up shadow variables that are aliased to
         #    memory that is visible to the running program, unless that
@@ -103,12 +101,12 @@ class FrameVM(object):
         if isinstance(x, (int, float)):
             if type(x) is int and 0 <= x < 256:
                 raise Exception('cannot shadow low integer constants')
-            s_x = theano.shared(np.asarray(x), borrow=borrow)
+            s_x = self.watcher.shared(np.asarray(x), borrow=borrow)
         elif x.dtype == bool:
             print >> sys.stderr, "Warning: Theano has no bool, upgrading to int8"
-            s_x = theano.shared(x.astype('int8'), borrow=borrow)
+            s_x = self.watcher.shared(x.astype('int8'), borrow=borrow)
         else:
-            s_x = theano.shared(x, borrow=borrow)
+            s_x = self.watcher.shared(x, borrow=borrow)
         self.watcher.shadow(x, s_x)
 
     def ensure_shadow(self, x):
@@ -473,6 +471,8 @@ class FrameVM(object):
                     self.watcher.shadow(rval, theano.tensor.exp(*s_args))
                 elif func.__name__ == 'log':
                     self.watcher.shadow(rval, theano.tensor.log(*s_args))
+                elif func.__name__ == 'log1p':
+                    self.watcher.shadow(rval, theano.tensor.log1p(*s_args))
                 elif func.__name__ == 'log10':
                     self.watcher.shadow(rval, theano.tensor.log10(*s_args))
                 elif func.__name__ == 'maximum':
@@ -976,10 +976,11 @@ class FrameVM(object):
 
 
 class Context(object):
-    def __init__(self):
+    def __init__(self, device=None):
         self.svars = {}
         self.nogc = [] # ids that must not be reused
         # XXX: rethink to avoid actually holding on to all these intermediates.
+        self.device = device
 
     def shadow(self, rval, sval, force=True):
         assert hasattr(sval, 'type')  # assert sval is Theano variable
@@ -1002,3 +1003,8 @@ class Context(object):
         vm = FrameVM(self, fn)
         return vm.call(args, kwargs)
 
+    def shared(self, *args, **kwargs):
+        if self.device == 'cpu':
+            return theano.tensor._shared(*args, **kwargs)
+        else:
+            return theano.shared(*args, **kwargs)
