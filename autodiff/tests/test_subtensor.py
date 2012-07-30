@@ -13,7 +13,7 @@ def test_subtensor_increment():
         rval *= 1.0
         return rval
 
-    opt = fmin(loss, [np.zeros(2)])
+    opt = fmin(loss, (np.zeros(2),))
     print opt
     assert np.allclose(opt, [-3, 4])
 
