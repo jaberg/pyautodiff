@@ -28,6 +28,7 @@ class FMinSGD(object):
 
     """
     def __init__(self, fn, args, streams, step_size, loops=1,
+            step_size_backoff=0.25,
             theano_mode=None,
             theano_device=None,
             rseed=12345):
@@ -44,6 +45,7 @@ class FMinSGD(object):
         theano_device - (API leak) optional string to force cpu/gpu execution
         """
         self.rng = np.random.RandomState(rseed)
+        self.step_size_backoff = step_size_backoff
 
         ctxt = Context(device=theano_device)
 
@@ -158,7 +160,7 @@ class FMinSGD(object):
         rval = self.s_costs.get_value()
         if not np.isfinite(rval[-1]):
             self.s_step_size.set_value(
-                    self.s_step_size.get_value() / 2.0)
+                    self.s_step_size.get_value() * self.step_size_backoff)
             [s_a.set_value(a, borrow=True)
                     for s_a, a in zip(self.s_args, args_backup)]
         self.ii += len(rval)
