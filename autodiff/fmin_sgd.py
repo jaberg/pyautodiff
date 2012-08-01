@@ -40,6 +40,10 @@ class FMinSGD(object):
                  through them jointly, passing the i'th element of each
                  sequence to `fn` to get a gradient estimate.
         step_size - a multiplier on the negative gradient used for search
+            - a float will be used for all args
+            - a tuple of floats will use each float for each arg
+            - a tuple of ndarrays will use each ndarray for each arg
+            - floats and ndarrays can both be used in a tuple here
         theano_mode - (API leak) how to compile the underlying theano
                 function.
         theano_device - (API leak) optional string to force cpu/gpu execution
@@ -77,7 +81,17 @@ class FMinSGD(object):
 
         s_args = [ctxt.svars[id(w)] for w in flat_args]
         s_cost = ctxt.svars[id(cost)]
-        s_step_size = ctxt.shared(np.asarray(step_size))
+
+        # -- if step_size is a scalar, expand it out to match the args
+        try:
+            float(step_size)
+            step_size = (step_size,) * len(args)
+        except TypeError:
+            pass
+
+        s_step_sizes = [ctxt.shared(np.asarray(step)) for step in step_size]
+        if len(s_step_sizes) != len(args):
+            raise ValueError('len of step_size tuple must match len of args')
 
         s_costs = ctxt.shared(np.zeros(3, dtype=s_cost.dtype), name='costs')
 
@@ -92,8 +106,8 @@ class FMinSGD(object):
                 )
 
         # -- shared var into which we will write stream entries
-        updates = [(a, a - theano.tensor.cast(s_step_size, a.dtype) * g)
-                for a, g, in zip(s_args, g_args)]
+        updates = [(a, a - theano.tensor.cast(s_step, a.dtype) * g)
+                for s_step, a, g, in zip(s_step_sizes, s_args, g_args)]
 
         updates += [(s_stream_idx, s_stream_idx + 1)]
         updates += [(s_costs,
@@ -116,7 +130,7 @@ class FMinSGD(object):
         self.s_streams0 = s_streams0
         self.update_fn = update_fn
         self._len = _len
-        self.s_step_size = s_step_size
+        self.s_step_sizes = s_step_sizes
         self.s_stream_idx = s_stream_idx
         self.s_costs = s_costs
         self.s_idxs = s_idxs
@@ -159,8 +173,8 @@ class FMinSGD(object):
                 fn()
         rval = self.s_costs.get_value()
         if not np.isfinite(rval[-1]):
-            self.s_step_size.set_value(
-                    self.s_step_size.get_value() * self.step_size_backoff)
+            [s_step.set_value(s_step.get_value() * self.step_size_backoff)
+                for s_step in self.s_step_sizes]
             [s_a.set_value(a, borrow=True)
                     for s_a, a in zip(self.s_args, args_backup)]
         self.ii += len(rval)
