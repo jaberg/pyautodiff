@@ -1,4 +1,9 @@
+import gc
 import opcode
+
+#import theano
+#from theano.sandbox.cuda import cuda_ndarray
+#cuda_ndarray = cuda_ndarray.cuda_ndarray
 
 
 def itercode(code):
@@ -79,4 +84,17 @@ def doc_from_flat(doc, flat, pos):
 
     return rval, pos
 
+
+# -- picklable decorated function
+class post_collect(object):
+    def __init__(self, f):
+        self.f = f
+    def __call__(self, *args, **kwargs):
+        try:
+            return self.f(*args, **kwargs)
+        finally:
+            gc.collect()
+            #mem_info = cuda_ndarray.mem_info()
+            #om = cuda_ndarray.outstanding_mallocs()
+            #print 'Post-gc: %s %s' % (mem_info, om)
 
