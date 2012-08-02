@@ -13,6 +13,7 @@ import theano
 
 from .context import Context
 from .utils import flat_from_doc, doc_from_flat
+from .utils import post_collect
 
 logger = logging.getLogger(__name__)
 info = logger.info
@@ -195,6 +196,7 @@ class FMinSGD(object):
         return rval
 
 
+@post_collect
 def fmin_sgd(*args, **kwargs):
     """
     See FMinSGD for documentation. This function creates that object, exhausts
