@@ -16,6 +16,7 @@ import opcode
 import os
 import sys
 import trace
+import traceback
 import types
 
 
@@ -948,13 +949,26 @@ class FrameVM(object):
 
 
     def op_RAISE_VARARGS(self, i, op, arg):
+        print >> sys.stderr, "Exception in autodiff.Context:"
         if 1 <= arg:
             exc = self.pop()
+        else:
+            exc = None
         if 2 <= arg:
             param = self.pop()
+        else:
+            param = None
         if 3 <= arg:
             tb = self.pop()
-        raise NotImplementedError('exception handling')
+            traceback.print_tb(tb, file=sys.stderr)
+        else:
+            print >> sys.stderr, "No traceback info available"
+        if param is not None:
+            raise param
+        elif exc is not None:
+            raise exc()
+        else:
+            raise Exception('Completely mysterious exception')
 
     def op_RETURN_VALUE(self, i, op, arg):
         self.rval = self.pop()
