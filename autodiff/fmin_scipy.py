@@ -3,8 +3,9 @@ Scipy-based function minimization drivers
 
 """
 
-import time
+import logging
 import gc
+import time
 
 import numpy as np
 import scipy.optimize.lbfgsb
@@ -12,6 +13,16 @@ import theano
 
 from .context import Context
 from .utils import flat_from_doc, doc_from_flat
+from .utils import post_collect
+
+logger = logging.getLogger(__name__)
+info = logger.info
+warn = logger.warn
+error = logger.error
+
+def info(msg):
+    print 'INFO', msg
+    logger.warn(msg)
 
 
 def vector_from_args(args):
@@ -98,10 +109,12 @@ def theano_f_df(fn, args, mode, device, other_args=(), compile_fn=True):
         return f_df, locals()
 
 
+@post_collect
 def fmin_l_bfgs_b(fn, args,
         scalar_bounds=None,
         theano_mode=None,
         theano_device=None,
+        return_info=False,
         **scipy_kwargs):
     """
     Return values that minimize Python function `fn(*args)`, by automatically
@@ -118,6 +131,7 @@ def fmin_l_bfgs_b(fn, args,
     **scipy_kwargs: pass these through to scipy's fmin_l_bfgs_b routine
 
     """
+    info('compiling function for l_bfgs_b')
     if type(args) != tuple:
         raise TypeError('autodiff.fmin_l_bfgs_b: args must be tuple', args)
 
@@ -135,6 +149,7 @@ def fmin_l_bfgs_b(fn, args,
         if 'bounds' in scipy_kwargs:
             raise TypeError('duplicate argument: bounds')
         scipy_kwargs['bounds'] = bounds
+    info('passing control to scipy.fmin_l_bfgs_b')
     # pass control to iterative minimizer
     #x_opt, mincost, info_dct = fmin_l_bfgs_b(f_df, x, **fmin_kwargs)
     x_opt, mincost, info_dct = scipy.optimize.lbfgsb.fmin_l_bfgs_b(
@@ -143,8 +158,8 @@ def fmin_l_bfgs_b(fn, args,
     reshaped = args_from_vector(x_opt, flat_args)
     reshaped_as_doc, pos = doc_from_flat(args, reshaped, 0)
     assert pos == len(reshaped)
-    # XXX: one of the scipy_kwargs says to return more/less info,
-    #     and that should be reflected here too.
-    gc.collect()
-    return reshaped_as_doc
+    if return_info:
+        return reshaped_as_doc, {'fopt': mincost, 'info': info_dct}
+    else:
+        return reshaped_as_doc
 
