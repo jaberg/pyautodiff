@@ -55,7 +55,6 @@ def theano_f_df(fn, args, mode, device, other_args=(), compile_fn=True):
     # * computes f, dx
     flat_args = flat_from_doc(args)
     orig_s_args = [ctxt.svars[id(w)] for w in flat_args]
-    args_shapes = [w.shape for w in flat_args]
     x = vector_from_args(flat_args)
     s_x = theano.tensor.vector(dtype=x.dtype)
     s_args = []
