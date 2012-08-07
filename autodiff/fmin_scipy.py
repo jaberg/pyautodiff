@@ -18,10 +18,6 @@ info = logger.info
 warn = logger.warn
 error = logger.error
 
-def info(msg):
-    print 'INFO', msg
-    logger.warn(msg)
-
 
 def vector_from_args(args):
     args_sizes = [w.size for w in args]
