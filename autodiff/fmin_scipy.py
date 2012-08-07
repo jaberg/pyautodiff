@@ -4,8 +4,6 @@ Scipy-based function minimization drivers
 """
 
 import logging
-import gc
-import time
 
 import numpy as np
 import scipy.optimize.lbfgsb
