@@ -136,6 +136,7 @@ class FMinSGD(object):
         self.s_costs = s_costs
         self.s_idxs = s_idxs
         self.ii = 0
+        self.cost_history = []
 
     def __iter__(self):
         return self
@@ -173,11 +174,19 @@ class FMinSGD(object):
             for i in xrange(_N):
                 fn()
         rval = self.s_costs.get_value()
-        if not np.isfinite(rval[-1]):
+        if np.isfinite(rval[-1]):
+            self.cost_history.append(np.mean(rval))
+        else:
+            info('decreasing step sizes by %f' % self.step_size_backoff)
             [s_step.set_value(s_step.get_value() * self.step_size_backoff)
                 for s_step in self.s_step_sizes]
             [s_a.set_value(a, borrow=True)
                     for s_a, a in zip(self.s_args, args_backup)]
+        if len(self.cost_history) > 3:
+            if not (self.cost_history[-1] <= self.cost_history[-3]):
+                info('decreasing step sizes by' % self.step_size_backoff)
+                [s_step.set_value(s_step.get_value() * self.step_size_backoff)
+                    for s_step in self.s_step_sizes]
         self.ii += len(rval)
         return rval
 

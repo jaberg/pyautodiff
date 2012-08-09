@@ -98,16 +98,15 @@ class FrameVM(object):
         #    memory that is visible to the running program, unless that
         #    program can guarantee that all views of that memory are
         #    immutable.
-        borrow = False
         if isinstance(x, (int, float)):
             if type(x) is int and 0 <= x < 256:
                 raise Exception('cannot shadow low integer constants')
-            s_x = self.watcher.shared(np.asarray(x), borrow=borrow)
+            s_x = self.watcher.shared(np.asarray(x))
         elif x.dtype == bool:
             print >> sys.stderr, "Warning: Theano has no bool, upgrading to int8"
-            s_x = self.watcher.shared(x.astype('int8'), borrow=borrow)
+            s_x = self.watcher.shared(x.astype('int8'))
         else:
-            s_x = self.watcher.shared(x, borrow=borrow)
+            s_x = self.watcher.shared(x)
         self.watcher.shadow(x, s_x)
 
     def ensure_shadow(self, x):
@@ -1007,11 +1006,12 @@ class FrameVM(object):
 
 
 class Context(object):
-    def __init__(self, device=None):
+    def __init__(self, device=None, borrowable=()):
         self.svars = {}
         self.nogc = [] # ids that must not be reused
         # XXX: rethink to avoid actually holding on to all these intermediates.
         self.device = device
+        self.borrowable_ids = [id(b) for b in borrowable]
 
     def shadow(self, rval, sval, force=True):
         assert hasattr(sval, 'type')  # assert sval is Theano variable
@@ -1034,8 +1034,10 @@ class Context(object):
         vm = FrameVM(self, fn)
         return vm.call(args, kwargs)
 
-    def shared(self, *args, **kwargs):
+    def shared(self, obj, name=None, borrow=None):
+        if borrow is None:
+            borrow = (id(obj) in self.borrowable_ids)
         if self.device == 'cpu':
-            return theano.tensor._shared(*args, **kwargs)
+            return theano.tensor._shared(obj, borrow=borrow)
         else:
-            return theano.shared(*args, **kwargs)
+            return theano.shared(obj, borrow=borrow)
