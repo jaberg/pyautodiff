@@ -130,6 +130,11 @@ class FrameVM(object):
             raise TypeError('vm.call: kwargs must be dict', kwargs)
 
         func = self.func
+        if isinstance(func, type) and issubclass(func, BaseException):
+            # XXX not shadowing exception creation, because exceptions
+            # do not have func_code. Is this OK? can we do better?
+            return func(*args, **kwargs)
+
         func_code = self.func.func_code
         co_varnames = self.func.func_code.co_varnames
         co_argcount = self.func.func_code.co_argcount
