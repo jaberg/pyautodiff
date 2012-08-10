@@ -184,7 +184,7 @@ class FMinSGD(object):
                     for s_a, a in zip(self.s_args, args_backup)]
         if len(self.cost_history) > 3:
             if not (self.cost_history[-1] <= self.cost_history[-3]):
-                info('decreasing step sizes by' % self.step_size_backoff)
+                info('decreasing step sizes by %f' % self.step_size_backoff)
                 [s_step.set_value(s_step.get_value() * self.step_size_backoff)
                     for s_step in self.s_step_sizes]
         self.ii += len(rval)
