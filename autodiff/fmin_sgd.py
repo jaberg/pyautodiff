@@ -102,7 +102,6 @@ class FMinSGD(object):
         #theano.printing.debugprint(s_cost)
 
         g_args = theano.tensor.grad(s_cost, s_args,
-                warn_type=True,
                 disconnected_inputs='warn',
                 )
 
