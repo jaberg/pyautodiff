@@ -32,7 +32,9 @@ class FMinSGD(object):
             step_size_backoff=0.25,
             theano_mode=None,
             theano_device=None,
-            rseed=12345):
+            rseed=12345,
+            floatX='float64',
+            ):
         """
         fn - a callable taking *(args + (stream[i],))
         args - the arguments of fn, which this function will search
@@ -52,7 +54,7 @@ class FMinSGD(object):
         self.rng = np.random.RandomState(rseed)
         self.step_size_backoff = step_size_backoff
 
-        ctxt = Context(device=theano_device)
+        ctxt = Context(device=theano_device, floatX=floatX)
 
         s_streams0 = {} # -- symbolic element dictionary
         streams0 = {}  # -- non-symbolic first element dictionary

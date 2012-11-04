@@ -42,14 +42,14 @@ def args_from_vector(x, orig_args):
 
 
 def theano_f_df(fn, args, mode, device, other_args=(), compile_fn=True,
-        borrowable=()):
+        borrowable=(), floatX='float64'):
     """
     Compute gradient wrt args, but not other_args
     """
     # -- inspect bytecode of fn to determine derivative wrt args
 
     # hacky way to get call graph (we could do it without actually running it)
-    ctxt = Context(device, borrowable=borrowable)
+    ctxt = Context(device, borrowable=borrowable, floatX=floatX)
     cost = ctxt.call(fn, args + tuple(other_args))
 
     # construct bytecode for f_df() that
@@ -111,6 +111,7 @@ def fmin_l_bfgs_b(fn, args,
         theano_device=None,
         return_info=False,
         borrowable=(),
+        floatX='float64',
         **scipy_kwargs):
     """
     Return values that minimize Python function `fn(*args)`, by automatically
@@ -132,7 +133,7 @@ def fmin_l_bfgs_b(fn, args,
         raise TypeError('autodiff.fmin_l_bfgs_b: args must be tuple', args)
 
     f_df, lvars  = theano_f_df(fn, args, mode=theano_mode,
-            device=theano_device, borrowable=borrowable)
+            device=theano_device, borrowable=borrowable, floatX=floatX)
     del lvars
     gc.collect()
 

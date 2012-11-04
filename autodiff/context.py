@@ -8,14 +8,13 @@ This file demonstrates two applications of this technique:
 """
 
 import __builtin__
-from functools import partial
 import ctypes
-import inspect
+#import inspect
 import logging; logger = logging.getLogger(__name__)
 import opcode
-import os
+#import os
 import sys
-import trace
+#import trace
 import traceback
 import types
 
@@ -24,8 +23,6 @@ import numpy as np
 import theano
 
 from .utils import itercode
-
-from scipy.optimize.lbfgsb import fmin_l_bfgs_b
 
 logger.setLevel(logging.INFO)
 
@@ -98,10 +95,12 @@ class FrameVM(object):
         #    memory that is visible to the running program, unless that
         #    program can guarantee that all views of that memory are
         #    immutable.
-        if isinstance(x, (int, float)):
+        if isinstance(x, int):
             if type(x) is int and 0 <= x < 256:
                 raise Exception('cannot shadow low integer constants')
             s_x = self.watcher.shared(np.asarray(x))
+        elif isinstance(x, float):
+            s_x = self.watcher.shared(np.asarray(x).astype(self.watcher.floatX))
         elif x.dtype == bool:
             print >> sys.stderr, "Warning: Theano has no bool, upgrading to int8"
             s_x = self.watcher.shared(x.astype('int8'))
@@ -1006,12 +1005,13 @@ class FrameVM(object):
 
 
 class Context(object):
-    def __init__(self, device=None, borrowable=()):
+    def __init__(self, device=None, borrowable=(), floatX='float64'):
         self.svars = {}
         self.nogc = [] # ids that must not be reused
         # XXX: rethink to avoid actually holding on to all these intermediates.
         self.device = device
         self.borrowable_ids = [id(b) for b in borrowable]
+        self.floatX = floatX
 
     def shadow(self, rval, sval, force=True):
         assert hasattr(sval, 'type')  # assert sval is Theano variable
